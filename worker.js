@@ -1,3 +1,4 @@
+// BUILD_TRIGGER: workers.dev-enabled-2026-11-21
 // SAGI VOICE EDGE RELAY
 // Overseas-only relay template for Cloudflare Workers / workers.dev.
 // No SAGI domestic server or custom domain is required.
