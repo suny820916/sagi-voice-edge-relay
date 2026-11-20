@@ -1,4 +1,4 @@
-// BUILD_TRIGGER: buffered-body-relay-2026-11-21
+// BUILD_TRIGGER: explicit-upstream-error-2026-11-21
 // SAGI VOICE EDGE RELAY
 // Overseas-only relay template for Cloudflare Workers / workers.dev.
 // No SAGI domestic server or custom domain is required.
@@ -54,7 +54,19 @@ export default {
       init.body = await request.arrayBuffer();
     }
 
-    const response = await fetch(upstream, init);
+    let response;
+    try {
+      response = await fetch(upstream, init);
+    } catch (err) {
+      const h = new Headers(cors(origin));
+      h.set("Content-Type", "application/json; charset=utf-8");
+      h.set("X-SAGI-Relay", "workers.dev");
+      return new Response(JSON.stringify({
+        ok: false,
+        error: "SAGI_EDGE_UPSTREAM_FAILED",
+        detail: String(err && err.message ? err.message : err)
+      }), { status: 502, headers: h });
+    }
     const outHeaders = new Headers(response.headers);
     for (const [k,v] of Object.entries(cors(origin))) outHeaders.set(k,v);
     outHeaders.set("X-SAGI-Relay", "workers.dev");
