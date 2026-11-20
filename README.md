@@ -24,3 +24,11 @@ Cloudflare will clone this isolated Worker directory, create a Worker, configure
 - `wrangler.toml`: Workers deployment config
 
 After deployment, use the generated `https://<name>.<account>.workers.dev` URL as the SAGI VOICE primary cloud endpoint; Render remains fallback.
+
+
+## Build settings
+
+- Root directory: `/`
+- Build command: leave blank
+- Deploy command: `npx wrangler deploy`
+- Wrangler pinned: `4.135.0`
