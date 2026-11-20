@@ -47,7 +47,6 @@ export default {
     };
     if (request.method !== "GET" && request.method !== "HEAD") {
       init.body = request.body;
-      init.duplex = "half";
     }
 
     const response = await fetch(upstream, init);
