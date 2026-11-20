@@ -1,4 +1,4 @@
-// BUILD_TRIGGER: workers.dev-enabled-2026-11-21
+// BUILD_TRIGGER: buffered-body-relay-2026-11-21
 // SAGI VOICE EDGE RELAY
 // Overseas-only relay template for Cloudflare Workers / workers.dev.
 // No SAGI domestic server or custom domain is required.
@@ -41,13 +41,17 @@ export default {
     headers.delete("x-forwarded-for");
     headers.set("X-SAGI-Edge-Relay", "1");
 
+    headers.delete("content-length");
     const init = {
       method: request.method,
       headers,
       redirect: "follow"
     };
     if (request.method !== "GET" && request.method !== "HEAD") {
-      init.body = request.body;
+      // Buffer small/medium API bodies before forwarding. This avoids
+      // Safari/Workers ReadableStream forwarding failures that surface as
+      // a generic "Load failed" in iOS fetch().
+      init.body = await request.arrayBuffer();
     }
 
     const response = await fetch(upstream, init);
