@@ -1,4 +1,4 @@
-// BUILD_TRIGGER: explicit-upstream-error-2026-11-21
+// BUILD_TRIGGER: wrangler-4.165.0-2026-11-21
 // SAGI VOICE EDGE RELAY
 // Overseas-only relay template for Cloudflare Workers / workers.dev.
 // No SAGI domestic server or custom domain is required.
