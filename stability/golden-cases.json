@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "suite": "SAGI VOICE GOLDEN 1.0",
+  "endpoint": "/api/direct-tts",
+  "provider_required": "Microsoft Edge Neural Direct",
+  "cases": [
+    {
+      "id": "pro_male",
+      "label": "职业足球解说",
+      "mode": "ai_male",
+      "style": "football_pro",
+      "speed": 1,
+      "quality": "pro",
+      "text": "比赛进入最后十分钟，塔城队保持阵型，耐心寻找向前推进的机会。",
+      "min_bytes": 12000,
+      "min_seconds": 4,
+      "max_seconds": 16
+    },
+    {
+      "id": "passion_male",
+      "label": "激情攻防",
+      "mode": "ai_male",
+      "style": "football_passion",
+      "speed": 1.16,
+      "quality": "cinema",
+      "text": "第三次参加阿图什杯，这一次，塔城要冲出小组，创造历史！",
+      "min_bytes": 10000,
+      "min_seconds": 3,
+      "max_seconds": 14
+    },
+    {
+      "id": "goal_male",
+      "label": "绝杀高燃",
+      "mode": "ai_male",
+      "style": "football_goal",
+      "speed": 1.16,
+      "quality": "cinema",
+      "text": "最后一次进攻！射门！球进了！终场前的绝杀，所有等待都在这一刻爆发！",
+      "min_bytes": 12000,
+      "min_seconds": 4,
+      "max_seconds": 16
+    },
+    {
+      "id": "warm_female",
+      "label": "温情足球",
+      "mode": "ai_female",
+      "style": "football_warm",
+      "speed": 0.94,
+      "quality": "cinema",
+      "text": "有些比赛不会被很多人看见，但每一个认真奔跑的孩子，都值得被记录。",
+      "min_bytes": 12000,
+      "min_seconds": 5,
+      "max_seconds": 20
+    },
+    {
+      "id": "emotional_male",
+      "label": "感人故事",
+      "mode": "ai_male",
+      "style": "football_emotional",
+      "speed": 0.94,
+      "quality": "cinema",
+      "text": "两次止步小组赛之后，他们又回来了。不是因为忘记遗憾，而是因为还没有放下热爱。",
+      "min_bytes": 14000,
+      "min_seconds": 6,
+      "max_seconds": 24
+    },
+    {
+      "id": "memory_male",
+      "label": "纪录片回忆",
+      "mode": "ai_male",
+      "style": "football_memory",
+      "speed": 0.94,
+      "quality": "cinema",
+      "text": "很多年以后，人们也许记不清比分，但会记得那场雪、那片看台，以及一起为足球呐喊的人。",
+      "min_bytes": 15000,
+      "min_seconds": 6,
+      "max_seconds": 26
+    },
+    {
+      "id": "natural_female",
+      "label": "自然解说",
+      "mode": "ai_female",
+      "style": "natural",
+      "speed": 1,
+      "quality": "pro",
+      "text": "今天的比赛将在十八点开始，双方球队已经完成热身，现场准备就绪。",
+      "min_bytes": 11000,
+      "min_seconds": 4,
+      "max_seconds": 16
+    }
+  ]
+}

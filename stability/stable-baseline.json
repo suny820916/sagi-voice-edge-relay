@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "product": "SAGI VOICE",
+  "channel": "stable",
+  "stable_label": "R3.2",
+  "certified_source_sha": "0e3b2c99826c77f6cd3f635f6bae03a71b2d6be2",
+  "rollback_branch": "stable-r3.2",
+  "beta_branch": "beta",
+  "production_branch": "main",
+  "production_url": "https://sagi-voice-edge-relay.sg3544225.workers.dev/",
+  "tts_endpoint": "https://sagi-voice-edge-relay.sg3544225.workers.dev/api/direct-tts",
+  "primary_provider": "Microsoft Edge Neural Direct",
+  "policy": {
+    "production_requires": "golden suite + wrangler dry-run + GEC vectors all green",
+    "experimental_changes": "beta only",
+    "rollback": "reset production source to stable-r3.2 only after regression is confirmed"
+  }
+}
