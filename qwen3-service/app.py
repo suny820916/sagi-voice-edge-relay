@@ -78,7 +78,7 @@ def wav_duration(data: bytes) -> float:
 
 def apply_tempo(data: bytes, speed: float) -> bytes:
     speed = max(0.7, min(1.42, float(speed or 1.0)))
-    if abs(speed - 1.0) < 0.01:
+    if abs(speed - 1.0) < 0.000001:
         return data
     proc = subprocess.run(
         [
