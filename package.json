@@ -1,7 +1,11 @@
 {
   "name": "sagi-voice-edge-relay",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "deploy": "wrangler deploy",
     "check": "wrangler deploy --dry-run --outdir .wrangler-dry-run"
