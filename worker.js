@@ -1,4 +1,4 @@
-// BUILD_TRIGGER: edge-direct-https-upgrade-r3
+// BUILD_TRIGGER: standalone-voice-cors-r31
 import { synthesizeEdgeDirect } from "./edge-tts-direct.js";
 
 // BUILD_TRIGGER: wrangler-4.165.0-2026-11-21
@@ -34,8 +34,13 @@ function directTtsAllowed(request){
   if(rows.length>=20){directTtsRate.set(ip,rows);return false}
   rows.push(now);directTtsRate.set(ip,rows);return true
 }
-function directJson(data,status=200){
-  return new Response(JSON.stringify(data),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-SAGI-Direct-TTS":"1"}})
+function directJson(data,status=200,origin=""){
+  return new Response(JSON.stringify(data),{status,headers:{
+    "Content-Type":"application/json; charset=utf-8",
+    "Cache-Control":"no-store",
+    "X-SAGI-Direct-TTS":"1",
+    ...cors(origin)
+  }})
 }
 
 export default {
@@ -58,13 +63,13 @@ export default {
     }
 
     if (url.pathname === "/api/direct-tts") {
-      if (request.method !== "POST") return directJson({ok:false,error:"METHOD_NOT_ALLOWED"},405);
-      if (!directTtsAllowed(request)) return directJson({ok:false,error:"DIRECT_TTS_RATE_LIMIT"},429);
+      if (request.method !== "POST") return directJson({ok:false,error:"METHOD_NOT_ALLOWED"},405,origin);
+      if (!directTtsAllowed(request)) return directJson({ok:false,error:"DIRECT_TTS_RATE_LIMIT"},429,origin);
       try {
         const body=await request.json();
         const text=String(body?.text||"").trim();
-        if(!text)return directJson({ok:false,error:"Text required"},400);
-        if(text.length>6000)return directJson({ok:false,error:"Text too long"},413);
+        if(!text)return directJson({ok:false,error:"Text required"},400,origin);
+        if(text.length>6000)return directJson({ok:false,error:"Text too long"},413,origin);
         const result=await synthesizeEdgeDirect({
           text,
           mode:String(body?.mode||"ai_male"),
@@ -83,11 +88,12 @@ export default {
             "X-SAGI-Voice-Provider":result.provider,
             "X-SAGI-Voice-Model":result.model,
             "X-SAGI-Voice-Quality":"edge-direct",
-            "X-SAGI-Direct-TTS":"1"
+            "X-SAGI-Direct-TTS":"1",
+            ...cors(origin)
           }
         });
       } catch (err) {
-        return directJson({ok:false,error:"EDGE_DIRECT_TTS_FAILED",detail:String(err?.message||err).slice(0,300)},502);
+        return directJson({ok:false,error:"EDGE_DIRECT_TTS_FAILED",detail:String(err?.message||err).slice(0,300)},502,origin);
       }
     }
 
