@@ -80,12 +80,20 @@ jobs:
                   res.writeHead(400,{'Content-Type':'application/json'});
                   return res.end(JSON.stringify({detail:'text_required'}));
                 }
+                if(Number(body.target_duration)!==20){
+                  res.writeHead(422,{'Content-Type':'application/json'});
+                  return res.end(JSON.stringify({detail:'target_duration_not_forwarded',got:body.target_duration}));
+                }
                 const audio=wavSilence(1.2,24000);
                 res.writeHead(200,{
                   'Content-Type':'audio/wav',
                   'Content-Length':String(audio.length),
                   'X-Qwen-Model':'Qwen3-TTS-MOCK',
-                  'X-Qwen-Speaker':String(body.speaker||'unknown')
+                  'X-Qwen-Speaker':String(body.speaker||'unknown'),
+                  'X-SAGI-Tempo':'1.168000',
+                  'X-SAGI-Raw-Duration':'23.3600',
+                  'X-SAGI-Target-Duration':'20.0000',
+                  'X-SAGI-Final-Duration':'19.9840'
                 });
                 res.end(audio);
               });
@@ -129,7 +137,7 @@ jobs:
       - name: Real router audio
         run: |
           set -euo pipefail
-          BODY='{"text":"塔城向前推进，机会来了，这一次要把握住！","mode":"ai_male","speed":1.08,"style":"football_passion","quality":"cinema"}'
+          BODY='{"text":"塔城向前推进，机会来了，这一次要把握住！","mode":"ai_male","speed":1.08,"target_duration":20,"style":"football_passion","quality":"cinema"}'
           STATUS="$(curl --silent --show-error             -H 'Content-Type: application/json'             -d "$BODY"             -D /tmp/router.headers             -o /tmp/router.audio             -w '%{http_code}'             http://127.0.0.1:8787/api/voice-router)"
           cat /tmp/router.headers
           echo "http_status=$STATUS"
@@ -142,6 +150,10 @@ jobs:
           grep -qi '^X-SAGI-Voice-Provider: Qwen3-TTS' /tmp/router.headers
           grep -qi '^X-SAGI-Voice-Model: Qwen3-TTS-MOCK' /tmp/router.headers
           grep -qi '^X-SAGI-Voice-Fallback: 0' /tmp/router.headers
+          grep -qi '^X-SAGI-Tempo: 1.168000' /tmp/router.headers
+          grep -qi '^X-SAGI-Raw-Duration: 23.3600' /tmp/router.headers
+          grep -qi '^X-SAGI-Target-Duration: 20.0000' /tmp/router.headers
+          grep -qi '^X-SAGI-Final-Duration: 19.9840' /tmp/router.headers
           grep -qi '^X-SAGI-Voice-Complete: 1' /tmp/router.headers
           grep -qi '^Content-Type: audio/wav' /tmp/router.headers
           echo "SAGI VOICE QWEN3 PRIMARY ROUTE E2E OK"

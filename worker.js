@@ -114,6 +114,9 @@ function routerAudioResponse(audio,meta,origin){
       "X-SAGI-Performance-Rate":meta.rate||"",
       "X-SAGI-Performance-Pitch":meta.pitch||"",
       "X-SAGI-Tempo":meta.tempo||"",
+      "X-SAGI-Raw-Duration":meta.raw_duration||"",
+      "X-SAGI-Target-Duration":meta.target_duration||"",
+      "X-SAGI-Final-Duration":meta.final_duration||"",
       ...cors(origin)
     }
   })
@@ -207,6 +210,7 @@ export default {
         mode:String(body?.mode||"ai_male"),
         voice_id:String(body?.voice_id||""),
         speed:Number(body?.speed||1),
+        target_duration:Number(body?.target_duration||0)>0?Number(body.target_duration):null,
         style:String(body?.style||"natural"),
         quality:String(body?.quality||"pro"),
         commentary_mode:Boolean(body?.commentary_mode),
@@ -228,6 +232,9 @@ export default {
             fallback:false,
             performance_style:result.performance_style,
             tempo:result.tempo,
+            raw_duration:result.raw_duration,
+            target_duration:result.target_duration,
+            final_duration:result.final_duration,
             contentType:result.contentType
           },origin)
         }catch(err){

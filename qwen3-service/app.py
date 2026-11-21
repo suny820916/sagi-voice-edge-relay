@@ -16,6 +16,8 @@ from qwen_tts import Qwen3TTSModel
 MODEL_ID = os.getenv("QWEN_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
 SERVICE_TOKEN = os.getenv("SAGI_TTS_TOKEN", "")
 ATTN = os.getenv("QWEN_ATTN", "sdpa")
+TARGET_TEMPO_MIN = float(os.getenv("SAGI_TARGET_TEMPO_MIN", "0.70"))
+TARGET_TEMPO_MAX = float(os.getenv("SAGI_TARGET_TEMPO_MAX", "1.42"))
 _model = None
 _model_lock = threading.Lock()
 _infer_lock = threading.Lock()
@@ -29,6 +31,7 @@ class TTSRequest(BaseModel):
     instruct: str = Field(default="", max_length=2500)
     style: str = "football_pro"
     speed: float = Field(default=1.0, ge=0.7, le=1.42)
+    target_duration: Optional[float] = Field(default=None, ge=0.5, le=120.0)
     intensity: int = Field(default=65, ge=0, le=100)
     segment_index: int = Field(default=0, ge=0)
     segment_count: int = Field(default=1, ge=1, le=8)
@@ -39,6 +42,39 @@ def authorize(value: Optional[str]):
     expected = "Bearer " + SERVICE_TOKEN
     if not value or not hmac.compare_digest(value, expected):
         raise HTTPException(status_code=401, detail="unauthorized")
+
+def tempo_for_target(raw_duration: float, target_duration: Optional[float], fallback_speed: float) -> float:
+    if target_duration is None:
+        return max(0.7, min(1.42, float(fallback_speed or 1.0)))
+    raw = float(raw_duration or 0.0)
+    target = float(target_duration or 0.0)
+    if raw <= 0 or target <= 0:
+        raise HTTPException(status_code=422, detail="invalid_duration")
+    speed = raw / target
+    if speed < TARGET_TEMPO_MIN or speed > TARGET_TEMPO_MAX:
+        lo = raw / TARGET_TEMPO_MAX
+        hi = raw / TARGET_TEMPO_MIN
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "target_duration_out_of_safe_range",
+                "raw_duration": round(raw, 4),
+                "target_duration": round(target, 4),
+                "safe_target_min": round(lo, 4),
+                "safe_target_max": round(hi, 4),
+                "tempo": round(speed, 6),
+            },
+        )
+    return speed
+
+def wav_duration(data: bytes) -> float:
+    try:
+        info = sf.info(io.BytesIO(data))
+        if not info.samplerate:
+            return 0.0
+        return float(info.frames) / float(info.samplerate)
+    except Exception:
+        return 0.0
 
 def apply_tempo(data: bytes, speed: float) -> bytes:
     speed = max(0.7, min(1.42, float(speed or 1.0)))
@@ -108,13 +144,19 @@ def tts(req: TTSRequest, authorization: Optional[str] = Header(default=None)):
     data = buf.getvalue()
     if len(data) < 800:
         raise HTTPException(status_code=502, detail="empty_audio")
-    data = apply_tempo(data, req.speed)
+    raw_duration = float(len(audio)) / float(sr) if sr else 0.0
+    tempo = tempo_for_target(raw_duration, req.target_duration, req.speed)
+    data = apply_tempo(data, tempo)
+    final_duration = wav_duration(data)
     headers = {
         "Cache-Control": "no-store",
         "X-Qwen-Model": MODEL_ID,
         "X-Qwen-Speaker": req.speaker,
         "X-SAGI-Style": req.style,
         "X-SAGI-Sample-Rate": str(sr),
-        "X-SAGI-Tempo": f"{req.speed:.4f}",
+        "X-SAGI-Tempo": f"{tempo:.6f}",
+        "X-SAGI-Raw-Duration": f"{raw_duration:.4f}",
+        "X-SAGI-Target-Duration": "" if req.target_duration is None else f"{req.target_duration:.4f}",
+        "X-SAGI-Final-Duration": f"{final_duration:.4f}",
     }
     return Response(content=data, media_type="audio/wav", headers=headers)
