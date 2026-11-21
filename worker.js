@@ -45,15 +45,37 @@ const VOICE_MANIFEST = JSON.stringify({
   name:"SAGI VOICE",
   short_name:"SAGI VOICE",
   description:"SAGI SPORTS 独立 AI 配音工作台",
-  start_url:"/voice",
+  start_url:"/",
   scope:"/",
   display:"standalone",
-  background_color:"#07090a",
-  theme_color:"#080a0b",
-  icons:[{src:"/voice-icon.svg",sizes:"any",type:"image/svg+xml",purpose:"any maskable"}]
+  background_color:"#080b0d",
+  theme_color:"#080b0d",
+  orientation:"portrait-primary",
+  icons:[{src:"/icon.svg",sizes:"any",type:"image/svg+xml",purpose:"any maskable"}]
 });
-const VOICE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#080a0b"/><path d="M126 376 230 120h57l103 256h-66l-22-61H211l-22 61h-63Zm105-117h51l-25-72-26 72Z" fill="#f2efe6"/><circle cx="362" cy="132" r="30" fill="#e52231"/></svg>`;
-const VOICE_SW = `const C='sagi-voice-worker-pwa-v1';const S=['/voice','/manifest.webmanifest','/voice-icon.svg'];self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.addAll(S)).then(()=>self.skipWaiting())));self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x.startsWith('sagi-voice-worker-pwa-')&&x!==C).map(x=>caches.delete(x)))).then(()=>self.clients.claim())));self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;const u=new URL(e.request.url);if(u.origin!==location.origin)return;e.respondWith(fetch(e.request).then(r=>{const x=r.clone();caches.open(C).then(c=>c.put(e.request,x));return r}).catch(()=>caches.match(e.request)))})`;
+const VOICE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<rect width="512" height="512" rx="112" fill="#080b0d"/>
+<rect x="42" y="42" width="428" height="428" rx="92" fill="#11130f" stroke="#60502e" stroke-width="8"/>
+<path d="M150 372L256 112L354 372" fill="none" stroke="#d7b568" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M205 286H302" stroke="#d7b568" stroke-width="32" stroke-linecap="round"/>
+<circle cx="366" cy="150" r="34" fill="#e23e35"/>
+</svg>`;
+const VOICE_SW = `
+const CACHE='sagi-voice-standalone-v2';
+const SHELL=['/','/manifest.webmanifest','/icon.svg'];
+self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).catch(()=>{}))});
+self.addEventListener('activate',e=>e.waitUntil((async()=>{for(const k of await caches.keys())if(k.startsWith('sagi-voice-')&&k!==CACHE)await caches.delete(k);await self.clients.claim()})()));
+self.addEventListener('fetch',e=>{
+  if(e.request.method!=='GET')return;
+  const u=new URL(e.request.url);
+  if(u.origin!==location.origin)return;
+  if(e.request.mode==='navigate'){
+    e.respondWith(fetch(e.request,{cache:'no-store'}).then(r=>{const x=r.clone();caches.open(CACHE).then(c=>c.put('/',x));return r}).catch(()=>caches.match('/')));
+    return;
+  }
+  e.respondWith(fetch(e.request).then(r=>{const x=r.clone();caches.open(CACHE).then(c=>c.put(e.request,x));return r}).catch(()=>caches.match(e.request)));
+});
+`;
 
 export default {
   async fetch(request) {
@@ -63,24 +85,14 @@ export default {
       return new Response(null, { status: 204, headers: cors(origin) });
     }
 
-    if (request.method === "GET" && url.pathname === "/manifest.webmanifest") {
+    if (request.method === "GET" && (url.pathname === "/manifest.webmanifest" || url.pathname === "/voice-manifest.json")) {
       return new Response(VOICE_MANIFEST,{status:200,headers:{"Content-Type":"application/manifest+json; charset=utf-8","Cache-Control":"no-cache"}});
     }
-    if (request.method === "GET" && url.pathname === "/voice-icon.svg") {
+    if (request.method === "GET" && (url.pathname === "/icon.svg" || url.pathname === "/voice-icon.svg")) {
       return new Response(VOICE_ICON,{status:200,headers:{"Content-Type":"image/svg+xml; charset=utf-8","Cache-Control":"public, max-age=86400"}});
     }
     if (request.method === "GET" && url.pathname === "/voice-sw.js") {
       return new Response(VOICE_SW,{status:200,headers:{"Content-Type":"application/javascript; charset=utf-8","Cache-Control":"no-cache","Service-Worker-Allowed":"/"}});
-    }
-
-    if (request.method === "GET" && url.pathname === "/manifest.webmanifest") {
-      return new Response(VOICE_MANIFEST,{status:200,headers:{"Content-Type":"application/manifest+json; charset=utf-8","Cache-Control":"public, max-age=3600"}});
-    }
-    if (request.method === "GET" && url.pathname === "/icon.svg") {
-      return new Response(VOICE_ICON,{status:200,headers:{"Content-Type":"image/svg+xml; charset=utf-8","Cache-Control":"public, max-age=86400"}});
-    }
-    if (request.method === "GET" && url.pathname === "/voice-sw.js") {
-      return new Response(VOICE_SW,{status:200,headers:{"Content-Type":"application/javascript; charset=utf-8","Cache-Control":"no-cache"}});
     }
 
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/voice" || url.pathname === "/voice/")) {
@@ -88,7 +100,7 @@ export default {
         status: 200,
         headers: {
           "Content-Type": "text/html; charset=utf-8",
-          "Cache-Control": "no-store",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
           "X-SAGI-Voice-Direct": "1"
         }
       });
