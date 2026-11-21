@@ -2,6 +2,7 @@ import io
 import os
 import hmac
 import threading
+import subprocess
 from typing import Optional
 
 import numpy as np
@@ -38,6 +39,27 @@ def authorize(value: Optional[str]):
     expected = "Bearer " + SERVICE_TOKEN
     if not value or not hmac.compare_digest(value, expected):
         raise HTTPException(status_code=401, detail="unauthorized")
+
+def apply_tempo(data: bytes, speed: float) -> bytes:
+    speed = max(0.7, min(1.42, float(speed or 1.0)))
+    if abs(speed - 1.0) < 0.01:
+        return data
+    proc = subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-i", "pipe:0",
+            "-filter:a", f"atempo={speed:.6f}",
+            "-f", "wav", "pipe:1",
+        ],
+        input=data,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0 or len(proc.stdout) < 800:
+        detail = proc.stderr.decode("utf-8", errors="ignore")[:220]
+        raise HTTPException(status_code=502, detail="tempo_failed:" + detail)
+    return proc.stdout
 
 def load_model():
     global _model
@@ -86,11 +108,13 @@ def tts(req: TTSRequest, authorization: Optional[str] = Header(default=None)):
     data = buf.getvalue()
     if len(data) < 800:
         raise HTTPException(status_code=502, detail="empty_audio")
+    data = apply_tempo(data, req.speed)
     headers = {
         "Cache-Control": "no-store",
         "X-Qwen-Model": MODEL_ID,
         "X-Qwen-Speaker": req.speaker,
         "X-SAGI-Style": req.style,
         "X-SAGI-Sample-Rate": str(sr),
+        "X-SAGI-Tempo": f"{req.speed:.4f}",
     }
     return Response(content=data, media_type="audio/wav", headers=headers)
