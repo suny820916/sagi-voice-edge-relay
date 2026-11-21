@@ -107,6 +107,7 @@ export async function synthesizeQwen3(payload,env){
     fallback:false,
     performance_style:style,
     speaker:r.headers.get("X-Qwen-Speaker")||speakerFor(payload.mode,env),
+    tempo:r.headers.get("X-SAGI-Tempo")||"",
     instruct
   };
 }
