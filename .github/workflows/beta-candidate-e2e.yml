@@ -1,0 +1,83 @@
+name: SAGI VOICE Beta Candidate E2E
+
+on:
+  push:
+    branches: [beta]
+  workflow_dispatch:
+
+concurrency:
+  group: sagi-voice-beta-candidate
+  cancel-in-progress: true
+
+jobs:
+  beta-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Source assertions
+        run: |
+          set -euo pipefail
+          grep -q 'url.pathname === "/api/voice-router"' worker.js
+          grep -q 'X-SAGI-Voice-Route' worker.js
+          grep -q 'renderTokenCache' worker.js
+          grep -q "fetch('/api/voice-router'" worker.js
+          ! grep -q 'sagisports.cn' worker.js
+          node --input-type=module <<'JS'
+          import { generateSecMsGec } from './edge-tts-direct.js';
+          const got=generateSecMsGec(1760000000);
+          const expected='6D50DDDB91812C33-DD68EFB01898B0750C9797D51A5FF93471DFDAE6888A1039D532CBDCCE54545D';
+          if(got!==expected)throw new Error('GEC mismatch');
+          console.log('GEC vector OK');
+          JS
+
+      - name: Wrangler dry-run
+        run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
+
+      - name: Start beta Worker locally
+        run: |
+          set -euo pipefail
+          nohup npx wrangler dev --local --ip 127.0.0.1 --port 8787 > /tmp/sagi-beta-worker.log 2>&1 &
+          echo $! > /tmp/sagi-beta-worker.pid
+          READY=0
+          for i in $(seq 1 40); do
+            if curl --silent --fail http://127.0.0.1:8787/ | grep -q 'BETA 候选版 · Router 自检 · R3.3'; then
+              READY=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$READY" != "1" ]; then
+            cat /tmp/sagi-beta-worker.log
+            exit 1
+          fi
+          echo "Beta Worker local runtime ready."
+
+      - name: Real router audio
+        run: |
+          set -euo pipefail
+          BODY='{"text":"塔城向前推进，机会来了，这一次要把握住！","mode":"ai_male","speed":1.08,"style":"football_passion","quality":"cinema"}'
+          STATUS="$(curl --silent --show-error             -H 'Content-Type: application/json'             -d "$BODY"             -D /tmp/router.headers             -o /tmp/router.audio             -w '%{http_code}'             http://127.0.0.1:8787/api/voice-router)"
+          cat /tmp/router.headers
+          echo "http_status=$STATUS"
+          test "$STATUS" = "200"
+          SIZE="$(wc -c < /tmp/router.audio)"
+          echo "audio_bytes=$SIZE"
+          test "$SIZE" -gt 5000
+          grep -qi '^X-SAGI-Voice-Router: 1' /tmp/router.headers
+          grep -Eqi '^X-SAGI-Voice-Route: (edge-direct|render-fallback)' /tmp/router.headers
+          grep -qi '^X-SAGI-Voice-Complete: 1' /tmp/router.headers
+          echo "SAGI VOICE BETA ROUTER E2E OK"
+
+      - name: Runtime log
+        if: always()
+        run: |
+          tail -n 160 /tmp/sagi-beta-worker.log 2>/dev/null || true
