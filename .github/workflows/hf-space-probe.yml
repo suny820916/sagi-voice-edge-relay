@@ -24,6 +24,59 @@ jobs:
             echo
           done
 
+      - name: Browser CORS preflight probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://qwen-qwen3-tts.hf.space"
+          curl -L --silent --show-error --max-time 30 -X OPTIONS             -H 'Origin: https://suny820916.github.io'             -H 'Access-Control-Request-Method: POST'             -H 'Access-Control-Request-Headers: content-type'             -D /tmp/cors.headers -o /tmp/cors.body             "$BASE/gradio_api/call/generate_custom_voice" || true
+          echo "=== CORS HEADERS ==="
+          grep -Ei '^(HTTP/|access-control-allow-origin|access-control-allow-methods|access-control-allow-headers|vary):' /tmp/cors.headers || true
+
+      - name: Real Qwen3 1.7B API call
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://qwen-qwen3-tts.hf.space"
+          cat >/tmp/payload.json <<'JSON'
+          {"data":["塔城队完成绝杀！","Chinese","Uncle_fu","中国职业足球现场直播解说员。短促、有力、明显兴奋，但不要失真尖叫。必须准确朗读原文。","1.7B"]}
+          JSON
+          CODE="$(curl -L --silent --show-error --max-time 60             -H 'Content-Type: application/json'             -H 'Origin: https://suny820916.github.io'             -D /tmp/call.headers             -o /tmp/call.json             -w '%{http_code}'             -X POST             --data @/tmp/payload.json             "$BASE/gradio_api/call/generate_custom_voice")"
+          echo "call_status=$CODE"
+          grep -Ei '^(content-type|access-control-allow-origin|location):' /tmp/call.headers || true
+          cat /tmp/call.json
+          test "$CODE" = "200"
+          EVENT_ID="$(python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/call.json'))
+          print(d.get('event_id',''))
+          PY
+          )"
+          test -n "$EVENT_ID"
+          echo "event_id_present=1"
+          curl -L --silent --show-error --max-time 180             -H 'Accept: text/event-stream'             -H 'Origin: https://suny820916.github.io'             -D /tmp/result.headers             "$BASE/gradio_api/call/generate_custom_voice/$EVENT_ID"             -o /tmp/result.sse
+          echo "=== RESULT HEADERS ==="
+          grep -Ei '^(content-type|access-control-allow-origin):' /tmp/result.headers || true
+          echo "=== RESULT SSE TAIL ==="
+          tail -c 6000 /tmp/result.sse
+          python3 - <<'PY'
+          import json,re,sys
+          raw=open('/tmp/result.sse',encoding='utf-8',errors='replace').read()
+          rows=[]
+          for line in raw.splitlines():
+              if line.startswith('data:'):
+                  s=line[5:].strip()
+                  try: rows.append(json.loads(s))
+                  except: pass
+          print('json_events',len(rows))
+          final=rows[-1] if rows else None
+          print('final_type',type(final).__name__)
+          txt=json.dumps(final,ensure_ascii=False) if final is not None else ''
+          print(txt[:5000])
+          if not txt or ('url' not in txt and 'path' not in txt):
+              raise SystemExit('No audio file reference in final event')
+          PY
+
       - name: Parse Gradio named endpoints if available
         shell: bash
         run: |
@@ -56,3 +109,6 @@ jobs:
               except Exception as e:
                   print("ERR",u,repr(e))
           PY
+
+
+# probe-v2
