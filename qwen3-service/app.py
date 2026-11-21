@@ -38,7 +38,7 @@ class TTSRequest(BaseModel):
 
 def authorize(value: Optional[str]):
     if not SERVICE_TOKEN:
-        return
+        raise HTTPException(status_code=503, detail="service_not_configured")
     expected = "Bearer " + SERVICE_TOKEN
     if not value or not hmac.compare_digest(value, expected):
         raise HTTPException(status_code=401, detail="unauthorized")
@@ -91,11 +91,16 @@ def apply_tempo(data: bytes, speed: float) -> bytes:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
+        timeout=30,
     )
     if proc.returncode != 0 or len(proc.stdout) < 800:
         detail = proc.stderr.decode("utf-8", errors="ignore")[:220]
         raise HTTPException(status_code=502, detail="tempo_failed:" + detail)
-    return proc.stdout
+    # Normalize streaming WAV headers before sending to Safari or measuring frames.
+    samples, rate = sf.read(io.BytesIO(proc.stdout), dtype="float32")
+    output = io.BytesIO()
+    sf.write(output, samples, rate, format="WAV", subtype="PCM_16")
+    return output.getvalue()
 
 def load_model():
     global _model
@@ -148,6 +153,10 @@ def tts(req: TTSRequest, authorization: Optional[str] = Header(default=None)):
     tempo = tempo_for_target(raw_duration, req.target_duration, req.speed)
     data = apply_tempo(data, tempo)
     final_duration = wav_duration(data)
+    if final_duration <= 0:
+        raise HTTPException(status_code=502, detail="invalid_output_duration")
+    if req.target_duration is not None and abs(final_duration - req.target_duration) > 0.25:
+        raise HTTPException(status_code=422, detail="target_duration_tolerance_exceeded")
     headers = {
         "Cache-Control": "no-store",
         "X-Qwen-Model": MODEL_ID,
