@@ -66,13 +66,13 @@ function splitText(text){
   const push=()=>{if(cur.trim()){out.push(cur.trim());cur=''}};
   for(const s0 of sentences){
     let s=s0.trim();if(!s)continue;
-    while(s.length>34){
+    while(s.length>45){
       if(cur)push();
-      out.push(s.slice(0,34));
-      s=s.slice(34);
+      out.push(s.slice(0,45));
+      s=s.slice(45);
     }
     if(!s)continue;
-    if(cur && cur.length+s.length>34)push();
+    if(cur && cur.length+s.length>45)push();
     cur+=s;
   }
   push();
