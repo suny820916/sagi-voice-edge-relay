@@ -20,7 +20,7 @@ function timestamp(){return new Date().toISOString().replace(/[-:.]/g,"").slice(
 function escapeXml(s){return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g," ").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;")}
 function fullVoice(shortName){const m=/^([a-z]{2,})-([A-Z]{2,})-(.+Neural)$/.exec(shortName);if(!m)return shortName;return `Microsoft Server Speech Text to Speech Voice (${m[1]}-${m[2]}, ${m[3]})`}
 function configMessage(){return `X-Timestamp:${timestamp()}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}\r\n`}
-function ssmlMessage(requestId,voice,text,rate,pitch){const ssml=`<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'><voice name='${fullVoice(voice)}'><prosody pitch='${pitch}' rate='${rate}' volume='+0%'>${escapeXml(text)}</prosody></voice></speak>`;return `X-RequestId:${requestId}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${timestamp()}Z\r\nPath:ssml\r\n\r\n${ssml}`}
+function ssmlMessage(requestId,voice,text,rate,pitch,volume="+0%"){const ssml=`<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'><voice name='${fullVoice(voice)}'><prosody pitch='${pitch}' rate='${rate}' volume='${volume}'>${escapeXml(text)}</prosody></voice></speak>`;return `X-RequestId:${requestId}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${timestamp()}Z\r\nPath:ssml\r\n\r\n${ssml}`}
 
 function wsHeaders(){
   return {
@@ -56,7 +56,7 @@ async function openSocket(url){
   if(r.status!==101||!r.webSocket){const e=new Error("EDGE_TTS_WS_"+r.status);e.status=r.status;e.serverDate=r.headers.get("Date")||"";throw e}
   return r.webSocket
 }
-async function synthesizeOnce(text,voice,rate,pitch,unixSeconds){
+async function synthesizeOnce(text,voice,rate,pitch,volume,unixSeconds){
   const conn=id(),urls=endpointUrls(conn,unixSeconds);let last;
   for(const url of urls){
     try{
@@ -73,7 +73,7 @@ async function synthesizeOnce(text,voice,rate,pitch,unixSeconds){
         const onClose=()=>{if(!settled)chunks.length?finish():fail(new Error("EDGE_TTS_CLOSED"))};
         const onError=()=>fail(new Error("EDGE_TTS_SOCKET_ERROR"));
         socket.addEventListener("message",onMessage);socket.addEventListener("close",onClose);socket.addEventListener("error",onError);
-        socket.accept();socket.send(configMessage());socket.send(ssmlMessage(id(),voice,text,rate,pitch));
+        socket.accept();socket.send(configMessage());socket.send(ssmlMessage(id(),voice,text,rate,pitch,volume));
         timer=setTimeout(()=>fail(new Error("EDGE_TTS_TIMEOUT")),30000)
       })
     }catch(e){last=e}
@@ -104,19 +104,35 @@ function curveBoost(curve,position){
   return 0.18
 }
 function stylePlan(style,speed,{intensity=60,curve="steady",position=.5}={}){
-  const s=String(style||"natural"),x=clamp(Number(speed)||1,.78,1.30);let bias=1,pitch=0;
-  if(s==="football_pro"){bias=1.01;pitch=1}
-  else if(s==="football_passion"){bias=1.04;pitch=2}
-  else if(s==="football_goal"){bias=1.07;pitch=3}
-  else if(s==="football_warm"){bias=.97;pitch=-1}
-  else if(s==="football_emotional"){bias=.94;pitch=-2}
-  else if(s==="football_memory"){bias=.96;pitch=-2}
+  const s=String(style||"natural"),x=clamp(Number(speed)||1,.74,1.36);let bias=1,pitch=0,volume=0;
+  if(s==="football_pro"){bias=.98;pitch=-1;volume=0}
+  else if(s==="football_passion"){bias=1.11;pitch=6;volume=8}
+  else if(s==="football_goal"){bias=1.19;pitch=10;volume=14}
+  else if(s==="football_warm"){bias=.90;pitch=-4;volume=-4}
+  else if(s==="football_emotional"){bias=.86;pitch=-6;volume=-5}
+  else if(s==="football_memory"){bias=.89;pitch=-5;volume=-4}
   const intensity01=clamp(Number(intensity)||60,0,100)/100;
   const boost=curveBoost(curve,position)*intensity01;
-  bias*=1+boost*.035;
-  pitch+=Math.round(boost*3);
-  const pct=Math.round((clamp(x*bias,.76,1.32)-1)*100);
-  return{rate:(pct>=0?"+":"")+pct+"%",pitch:(pitch>=0?"+":"")+pitch+"Hz"}
+  bias*=1+boost*.10;
+  pitch+=Math.round(boost*7);
+  volume+=Math.round(boost*7);
+  const pct=Math.round((clamp(x*bias,.70,1.42)-1)*100);
+  const vol=Math.round(clamp(volume,-12,18));
+  return{
+    rate:(pct>=0?"+":"")+pct+"%",
+    pitch:(pitch>=0?"+":"")+pitch+"Hz",
+    volume:(vol>=0?"+":"")+vol+"%"
+  }
+}
+function voiceFor(mode,style){
+  if(mode==="ai_female"){
+    if(style==="football_goal"||style==="football_passion")return "zh-CN-XiaoyiNeural";
+    return "zh-CN-XiaoxiaoNeural"
+  }
+  if(style==="football_goal"||style==="football_passion")return "zh-CN-YunjianNeural";
+  if(style==="football_warm"||style==="football_emotional")return "zh-CN-YunxiNeural";
+  if(style==="football_memory"||style==="football_pro")return "zh-CN-YunyangNeural";
+  return "zh-CN-YunjianNeural"
 }
 function splitText(text,max=1200){
   const s=String(text||"").trim();if(!s)return[];
@@ -135,30 +151,32 @@ export async function synthesizeEdgeDirect({
   segment_count=1
 }){
   const chunks=splitText(text);if(!chunks.length)throw new Error("TEXT_REQUIRED");if(String(text).length>6000)throw new Error("TEXT_TOO_LONG");
-  const voice=mode==="ai_female"?"zh-CN-XiaoxiaoNeural":"zh-CN-YunjianNeural",audio=[];
+  const audio=[];
   const count=Math.max(1,Number(segment_count)||1),idx=clamp(Number(segment_index)||0,0,count-1);
   const basePosition=count<=1?.5:idx/(count-1);
-  let lastStyle="natural",lastPlan=null;
+  let lastStyle="natural",lastPlan=null,lastVoice="";
   for(let i=0;i<chunks.length;i++){
     const chunk=chunks[i];
     const position=chunks.length<=1?basePosition:clamp((idx+(i/(Math.max(1,chunks.length-1))))/count,0,1);
     const resolvedStyle=choosePerformanceStyle(chunk,style,Boolean(commentary_mode));
     const plan=stylePlan(resolvedStyle,speed,{intensity,curve:emotion_curve,position});
+    const voice=voiceFor(mode,resolvedStyle);
     let buf,err;
     for(let attempt=0;attempt<2;attempt++){
-      try{buf=await synthesizeOnce(chunk,voice,plan.rate,plan.pitch,Date.now()/1000);break}catch(e){err=e;if(attempt===0)await new Promise(r=>setTimeout(r,250))}
+      try{buf=await synthesizeOnce(chunk,voice,plan.rate,plan.pitch,plan.volume,Date.now()/1000);break}catch(e){err=e;if(attempt===0)await new Promise(r=>setTimeout(r,250))}
     }
-    if(!buf)throw err||new Error("EDGE_TTS_FAILED");audio.push(buf);lastStyle=resolvedStyle;lastPlan=plan
+    if(!buf)throw err||new Error("EDGE_TTS_FAILED");audio.push(buf);lastStyle=resolvedStyle;lastPlan=plan;lastVoice=voice
   }
   const joined=Buffer.concat(audio);
   return{
     audio:joined,
-    voice,
-    model:"edge-neural-direct-v3-performance",
+    voice:lastVoice,
+    model:"edge-neural-direct-v4-contrast",
     provider:"Microsoft Edge Neural Direct",
     segments:chunks.length,
     performance_style:lastStyle,
     rate:lastPlan?.rate||"+0%",
-    pitch:lastPlan?.pitch||"+0Hz"
+    pitch:lastPlan?.pitch||"+0Hz",
+    volume:lastPlan?.volume||"+0%"
   }
 }
