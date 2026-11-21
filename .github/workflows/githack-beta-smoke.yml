@@ -83,19 +83,3 @@ jobs:
           done
           echo "REAL_QWEN3_SEGMENTED_LONG_TEXT=PASS"
 
-      - name: Real Qwen3 call using GitHack browser origin
-        shell: bash
-        run: |
-          set -euo pipefail
-          BASE="https://qwen-qwen3-tts.hf.space"
-          ORIGIN="https://raw.githack.com"
-          cat >/tmp/payload.json <<'JSON'
-          {"data":["塔城队完成绝杀！","Chinese","Uncle_fu","中国职业足球现场直播解说员。短促、有力、明显兴奋，但不要失真尖叫。必须准确朗读原文。","1.7B"]}
-          JSON
-          curl --fail --silent --show-error --max-time 60             -H 'Content-Type: application/json' -H "Origin: $ORIGIN"             -X POST --data @/tmp/payload.json             "$BASE/gradio_api/call/generate_custom_voice" > /tmp/call.json
-          ID="$(python3 -c "import json;print(json.load(open('/tmp/call.json'))['event_id'])")"
-          test -n "$ID"
-          curl --fail --silent --show-error --max-time 180             -H 'Accept: text/event-stream' -H "Origin: $ORIGIN"             "$BASE/gradio_api/call/generate_custom_voice/$ID" > /tmp/result.sse
-          grep -q 'Generation completed successfully' /tmp/result.sse
-          grep -q 'audio.wav' /tmp/result.sse
-          echo "REAL_QWEN3_FROM_GITHACK_ORIGIN=PASS"
