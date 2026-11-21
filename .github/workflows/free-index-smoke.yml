@@ -1,0 +1,33 @@
+name: IndexTTS free audio smoke
+on:
+  push:
+    branches: [feature/free-engine-discovery]
+    paths: ['.github/workflows/free-index-smoke.yml']
+  workflow_dispatch:
+jobs:
+  index-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install gradio_client soundfile
+      - name: Generate actual audio using demo-provided reference
+        run: |
+          timeout 240 python -u - <<'PY'
+          from gradio_client import Client, handle_file
+          import soundfile as sf
+          import shutil
+          c=Client("IndexTeam/IndexTTS-2.5-Demo")
+          ex=c.predict(0,api_name="/on_example_click")
+          ref=ex[0]
+          assert isinstance(ref,str),type(ref)
+          audio=c.predict(emo_control_method="Use emotion vectors",prompt=handle_file(ref),text="机会来了！头球！球进了！塔城队完成绝杀！",lang_choice="ZH",emo_ref_path=handle_file(ref),emo_weight=0.65,vec1=0.7,vec7=0.3,api_name="/gen_single")
+          shutil.copyfile(audio,"index-test.wav")
+          info=sf.info("index-test.wav")
+          assert info.duration>1 and info.duration<60
+          print(info)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SAGI-INDEX-REAL-SMOKE
+          path: index-test.wav
