@@ -91,3 +91,38 @@ jobs:
           assert sr==24000
           assert 19.75 <= dur <= 20.25, dur
           PY
+
+      - name: Exercise actual WAV normalization and authorization helpers
+        run: |
+          python3 -m pip install soundfile numpy
+          python3 - <<'PY'
+          import ast, io, hmac, subprocess, wave
+          import numpy as np
+          import soundfile as sf
+          from typing import Optional
+          class HTTPException(Exception):
+              def __init__(self,status_code,detail):
+                  self.status_code=status_code
+          ns=dict(globals(), SERVICE_TOKEN="")
+          tree=ast.parse(open('qwen3-service/app.py').read())
+          funcs=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name in ('authorize','apply_tempo','wav_duration')]
+          exec(compile(ast.Module(body=funcs,type_ignores=[]),'helpers','exec'),ns)
+          for token,header,expected in [('',None,503),('test',None,401),('test','Bearer wrong',401),('test','Bearer test',None)]:
+              ns['SERVICE_TOKEN']=token
+              try:
+                  ns['authorize'](header)
+                  assert expected is None
+              except HTTPException as e:
+                  assert e.status_code==expected
+          sr=24000
+          t=np.arange(round(sr*23.36))/sr
+          buf=io.BytesIO()
+          sf.write(buf,0.1*np.sin(2*np.pi*440*t),sr,format='WAV',subtype='PCM_16')
+          data=ns['apply_tempo'](buf.getvalue(),1.168)
+          with wave.open(io.BytesIO(data)) as w:
+              assert w.getframerate()==sr
+              assert w.getnframes()==len(w.readframes(w.getnframes()))//2
+          dur=ns['wav_duration'](data)
+          assert abs(dur-20)<=0.25,dur
+          print('normalized duration',dur)
+          PY
