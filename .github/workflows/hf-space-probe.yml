@@ -77,6 +77,43 @@ jobs:
               raise SystemExit('No audio file reference in final event')
           PY
 
+      - name: Official Gradio client real 1.7B call
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check "gradio_client>=1.10,<3"
+          python3 - <<'PY'
+          import os, json, shutil
+          from gradio_client import Client
+          client=Client("Qwen/Qwen3-TTS", verbose=False)
+          result=client.predict(
+              "塔城队完成绝杀！",
+              "Chinese",
+              "Uncle_fu",
+              "中国职业足球现场直播解说员。短促、有力、明显兴奋，但不要失真尖叫。必须准确朗读原文。",
+              "1.7B",
+              api_name="/generate_custom_voice",
+          )
+          print("result_type",type(result).__name__)
+          print("result",repr(result)[:2000])
+          audio = result[0] if isinstance(result,(list,tuple)) and result else None
+          if isinstance(audio,dict):
+              audio=audio.get("path") or audio.get("url")
+          if not audio or not os.path.exists(str(audio)):
+              raise SystemExit("Gradio client did not return a local audio file")
+          shutil.copyfile(str(audio),"HF_QWEN3_1.7B_SHORT.wav")
+          print("audio_bytes",os.path.getsize("HF_QWEN3_1.7B_SHORT.wav"))
+          PY
+          test "$(wc -c < HF_QWEN3_1.7B_SHORT.wav)" -gt 5000
+
+      - name: Upload official Space proof audio
+        uses: actions/upload-artifact@v4
+        with:
+          name: HF-QWEN3-1.7B-OFFICIAL-SPACE-PROOF
+          path: HF_QWEN3_1.7B_SHORT.wav
+          retention-days: 3
+          if-no-files-found: error
+
       - name: Parse Gradio named endpoints if available
         shell: bash
         run: |
