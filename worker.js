@@ -1,4 +1,6 @@
-import { synthesizeEdgeDirect } from "./edge-tts-direct.js";\n\n// BUILD_TRIGGER: wrangler-4.165.0-2026-11-21
+import { synthesizeEdgeDirect } from "./edge-tts-direct.js";
+
+// BUILD_TRIGGER: wrangler-4.165.0-2026-11-21
 // SAGI VOICE EDGE RELAY
 // Overseas-only relay template for Cloudflare Workers / workers.dev.
 // No SAGI domestic server or custom domain is required.
