@@ -1,0 +1,241 @@
+name: SAGI VOICE Promote Beta to Stable
+
+on:
+  push:
+    branches: [beta]
+    paths:
+      - "release/promote-stable.request"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sagi-voice-promote-stable
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Beta full history
+        uses: actions/checkout@v4
+        with:
+          ref: beta
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+
+      - name: Sync latest Stable infrastructure into Beta
+        run: |
+          set -euo pipefail
+          git config user.name "SAGI VOICE Release Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git fetch origin main beta stable-r3.2
+          MAIN_BEFORE="$(git rev-parse origin/main)"
+          echo "MAIN_BEFORE=$MAIN_BEFORE" >> "$GITHUB_ENV"
+          git merge --no-edit origin/main
+          git push origin HEAD:beta
+          echo "Beta synchronized with current main."
+
+      - name: Convert Beta marker to Stable candidate
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path("worker.js")
+          s=p.read_text(encoding="utf-8")
+          old="BETA 候选版 · Router 自检 · R3.3"
+          new="独立长期入口 · Stable Router · R3.3"
+          if old not in s:
+              raise SystemExit("Beta marker not found")
+          s=s.replace(old,new)
+          s=s.replace('<span class=\\"badge\\">BETA</span>','<span class=\\"badge\\">V1.3</span>')
+          p.write_text(s,encoding="utf-8")
+          PY
+          git add worker.js
+          git commit -m "release: SAGI VOICE Stable Router R3.3"
+          CANDIDATE="$(git rev-parse HEAD)"
+          echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
+          git push origin HEAD:beta
+          echo "Stable candidate=$CANDIDATE"
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Source gate
+        run: |
+          set -euo pipefail
+          grep -q 'url.pathname === "/api/voice-router"' worker.js
+          grep -q 'X-SAGI-Voice-Route' worker.js
+          grep -q 'renderTokenCache' worker.js
+          grep -q "fetch('/api/voice-router'" worker.js
+          grep -q '独立长期入口 · Stable Router · R3.3' worker.js
+          ! grep -q 'BETA 候选版' worker.js
+          ! grep -q 'sagisports.cn' worker.js
+          node --input-type=module <<'JS'
+          import { generateSecMsGec } from './edge-tts-direct.js';
+          const vectors=[
+            [0,'52BC7A17B50DFEC9-28C4394775C8751CD2F6859C030C06DB1489ACAB3B3A7651831FC26895177ED6'],
+            [1760000000,'6D50DDDB91812C33-DD68EFB01898B0750C9797D51A5FF93471DFDAE6888A1039D532CBDCCE54545D'],
+            [1760000300,'BAF4076F572BFE4E-2D6FBE5C0E24F56622EB94F37395F2D153C6C0C451DAAE2249A459BB3AFAD62C']
+          ];
+          for(const [t,e] of vectors){const g=generateSecMsGec(t);if(g!==e)throw new Error('GEC mismatch '+t)}
+          console.log('GEC vectors OK');
+          JS
+          npx wrangler deploy --dry-run --outdir .wrangler-dry-run
+
+      - name: Start candidate Worker locally
+        run: |
+          set -euo pipefail
+          nohup npx wrangler dev --local --ip 127.0.0.1 --port 8787 > /tmp/sagi-candidate.log 2>&1 &
+          echo $! > /tmp/sagi-candidate.pid
+          READY=0
+          for i in $(seq 1 45); do
+            if curl --silent --fail http://127.0.0.1:8787/ | grep -q '独立长期入口 · Stable Router · R3.3'; then
+              READY=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$READY" != "1" ]; then cat /tmp/sagi-candidate.log; exit 1; fi
+
+      - name: Seven-case candidate golden gate
+        run: |
+          set -euo pipefail
+          if ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y ffmpeg
+          fi
+          python - <<'PY'
+          import json, pathlib, subprocess, time, urllib.request, urllib.error
+
+          suite=json.load(open("stability/golden-cases.json","r",encoding="utf-8"))
+          baseline=json.load(open("stability/stable-baseline.json","r",encoding="utf-8")).get("metrics",{})
+          duration_drift=float(baseline.get("allowed_duration_drift_pct",30))/100
+          bytes_drift=float(baseline.get("allowed_bytes_drift_pct",40))/100
+          latency_limit=float(baseline.get("max_latency_seconds",4.5))
+          base_cases=baseline.get("cases",{})
+          failures=[]
+
+          for idx,case in enumerate(suite["cases"],1):
+              payload=json.dumps({
+                  "text":case["text"],"mode":case["mode"],"style":case["style"],
+                  "speed":case["speed"],"quality":case["quality"]
+              },ensure_ascii=False).encode("utf-8")
+              req=urllib.request.Request(
+                  "http://127.0.0.1:8787/api/voice-router",
+                  data=payload,headers={"Content-Type":"application/json"},method="POST")
+              started=time.time()
+              try:
+                  with urllib.request.urlopen(req,timeout=45) as resp:
+                      body=resp.read(); status=resp.status
+                      headers={k.lower():v for k,v in resp.headers.items()}
+              except urllib.error.HTTPError as e:
+                  body=e.read(); status=e.code
+                  headers={k.lower():v for k,v in e.headers.items()}
+              latency=time.time()-started
+              p=pathlib.Path(f"/tmp/{case['id']}.audio");p.write_bytes(body)
+              duration=0.0
+              if status==200 and len(body)>1000:
+                  q=subprocess.run(["ffprobe","-v","error","-show_entries","format=duration","-of","default=noprint_wrappers=1:nokey=1",str(p)],capture_output=True,text=True)
+                  duration=float((q.stdout or "0").strip() or 0)
+              b=base_cases.get(case["id"],{})
+              bdur=float(b.get("duration_seconds") or 0)
+              bbytes=float(b.get("bytes") or 0)
+              checks={
+                  "http":status==200,
+                  "router":headers.get("x-sagi-voice-router")=="1",
+                  "route":headers.get("x-sagi-voice-route") in ("edge-direct","render-fallback"),
+                  "complete":headers.get("x-sagi-voice-complete")=="1",
+                  "bytes":len(body)>=case["min_bytes"],
+                  "duration":case["min_seconds"]<=duration<=case["max_seconds"],
+                  "duration_drift":not bdur or abs(duration-bdur)/bdur<=duration_drift,
+                  "bytes_drift":not bbytes or abs(len(body)-bbytes)/bbytes<=bytes_drift,
+                  "latency":latency<=latency_limit
+              }
+              bad=[k for k,v in checks.items() if not v]
+              print(f"[{idx}/7] {case['id']} status={status} bytes={len(body)} duration={duration:.2f}s latency={latency:.2f}s route={headers.get('x-sagi-voice-route')} bad={bad}")
+              if bad: failures.append(case["id"]+":"+','.join(bad))
+              time.sleep(.5)
+          if failures: raise SystemExit("\n".join(failures))
+          print("Seven-case candidate golden gate OK")
+          PY
+
+      - name: Backup current Stable and promote candidate
+        run: |
+          set -euo pipefail
+          git fetch origin main beta
+          CURRENT_MAIN="$(git rev-parse origin/main)"
+          test "$CURRENT_MAIN" = "$MAIN_BEFORE"
+          CURRENT_BETA="$(git rev-parse origin/beta)"
+          test "$CURRENT_BETA" = "$CANDIDATE"
+          git push origin "$CURRENT_MAIN:refs/heads/stable-prev" --force
+          git push origin "$CANDIDATE:refs/heads/main" --force-with-lease="refs/heads/main:$CURRENT_MAIN"
+          echo "PROMOTED=1" >> "$GITHUB_ENV"
+          echo "Promoted $CANDIDATE to main."
+
+      - name: Verify production deployment
+        run: |
+          set -euo pipefail
+          BASE="https://sagi-voice-edge-relay.sg3544225.workers.dev"
+          READY=0
+          for i in $(seq 1 72); do
+            HTML="$(curl --silent --fail --max-time 20 "$BASE/" || true)"
+            if echo "$HTML" | grep -q '独立长期入口 · Stable Router · R3.3'; then
+              READY=1
+              echo "Production R3.3 live on attempt $i"
+              break
+            fi
+            sleep 5
+          done
+          test "$READY" = "1"
+
+          for SPEC in             '{"text":"塔城向前推进，机会来了，这一次要把握住！","mode":"ai_male","speed":1.08,"style":"football_passion","quality":"cinema"}'             '{"text":"每一份热爱，都值得被认真记录。","mode":"ai_female","speed":0.94,"style":"football_warm","quality":"cinema"}'
+          do
+            STATUS="$(curl --silent --show-error               -H 'Content-Type: application/json'               -d "$SPEC"               -D /tmp/live.headers               -o /tmp/live.audio               -w '%{http_code}'               "$BASE/api/voice-router")"
+            cat /tmp/live.headers
+            test "$STATUS" = "200"
+            test "$(wc -c < /tmp/live.audio)" -gt 5000
+            grep -qi '^X-SAGI-Voice-Router: 1' /tmp/live.headers
+            grep -Eqi '^X-SAGI-Voice-Route: (edge-direct|render-fallback)' /tmp/live.headers
+            grep -qi '^X-SAGI-Voice-Complete: 1' /tmp/live.headers
+          done
+          echo "Production Router smoke OK."
+
+      - name: Certify R3.3 rollback branch
+        run: |
+          set -euo pipefail
+          git push origin "$CANDIDATE:refs/heads/stable-r3.3" --force
+          echo "Certified stable-r3.3=$CANDIDATE"
+
+      - name: Automatic rollback on failed post-promotion verification
+        if: failure()
+        run: |
+          set -euo pipefail
+          if [ "${PROMOTED:-0}" = "1" ] && [ -n "${MAIN_BEFORE:-}" ] && [ -n "${CANDIDATE:-}" ]; then
+            echo "Post-promotion verification failed. Restoring previous main."
+            git fetch origin main
+            CURRENT="$(git rev-parse origin/main)"
+            if [ "$CURRENT" = "$CANDIDATE" ]; then
+              git push origin "$MAIN_BEFORE:refs/heads/main" --force-with-lease="refs/heads/main:$CANDIDATE"
+              echo "Rollback complete: $MAIN_BEFORE"
+            else
+              echo "Main changed after promotion; refusing automatic rollback."
+            fi
+          else
+            echo "Failure occurred before production promotion; no rollback needed."
+          fi
+
+      - name: Release summary
+        if: always()
+        run: |
+          {
+            echo "# SAGI VOICE Promotion"
+            echo ""
+            echo "- Previous main: `${MAIN_BEFORE:-not-promoted}`"
+            echo "- Candidate: `${CANDIDATE:-not-created}`"
+            echo "- Promoted: `${PROMOTED:-0}`"
+            echo "- Production URL: https://sagi-voice-edge-relay.sg3544225.workers.dev/"
+          } >> "$GITHUB_STEP_SUMMARY"
