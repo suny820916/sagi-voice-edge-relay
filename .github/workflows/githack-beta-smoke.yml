@@ -2,7 +2,7 @@ name: SAGI V1.5 GitHack Mobile Beta Smoke
 on:
   push:
     branches: [feature/v1.5-github-pages-beta]
-    paths: [".github/workflows/githack-beta-smoke.yml"]
+    paths: ["beta-site/**",".github/workflows/githack-beta-smoke.yml"]
   workflow_dispatch:
 jobs:
   smoke:
