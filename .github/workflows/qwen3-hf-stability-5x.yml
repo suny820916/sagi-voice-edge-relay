@@ -1,0 +1,116 @@
+name: SAGI Qwen3 Official Space 5x Stability
+
+on:
+  push:
+    branches: [feature/v1.5-hf-stability-5x]
+  workflow_dispatch:
+
+jobs:
+  stability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Ensure ffprobe
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+
+      - name: Run 5 real Qwen3 1.7B generations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess, time, urllib.request, urllib.error
+
+          BASE="https://qwen-qwen3-tts.hf.space"
+          ORIGIN="https://raw.githack.com"
+          cases=[
+              ("goal","球进了！塔城队在最后一分钟完成绝杀！","中国职业足球现场直播解说员。短促有力，‘球进了’瞬间爆发，随后保持高亢，但不要失真尖叫。"),
+              ("pro","比赛进入最后十分钟，双方仍然战成平局。","中国职业足球现场直播解说员。沉稳、清楚、有现场感，不要新闻播音腔。"),
+              ("warm","这些孩子从冬天踢到春天，只因为他们真的热爱足球。","成熟温暖的足球纪录片旁白。真诚、克制、有呼吸感，结尾留余韵。"),
+              ("attack","右路推进，传中送到禁区，头球攻门！","中国职业足球现场直播解说员。快速攻防，动作词短促，机会出现时明显抬升。"),
+              ("memory","有些比赛没有奖杯，却会被一群人记很多年。","高质量体育纪录片旁白。低沉、稳、有时间感，结尾有重量和余韵。"),
+          ]
+
+          def req(url, data=None, headers=None, timeout=60):
+              h=headers or {}
+              r=urllib.request.Request(url,data=data,headers=h,method="POST" if data is not None else "GET")
+              with urllib.request.urlopen(r,timeout=timeout) as x:
+                  return x.read(), dict(x.headers)
+
+          results=[]
+          for idx,(name,text,instruct) in enumerate(cases,1):
+              started=time.time()
+              ok=False
+              error=""
+              audio_url=""
+              duration=0.0
+              bytes_len=0
+              for attempt in range(1,3):
+                  try:
+                      payload=json.dumps({"data":[text,"Chinese","Uncle_fu",instruct,"1.7B"]},ensure_ascii=False).encode()
+                      raw,_=req(
+                          BASE+"/gradio_api/call/generate_custom_voice",
+                          data=payload,
+                          headers={"Content-Type":"application/json","Origin":ORIGIN},
+                          timeout=60,
+                      )
+                      event_id=json.loads(raw.decode())["event_id"]
+                      sse,_=req(
+                          BASE+"/gradio_api/call/generate_custom_voice/"+event_id,
+                          headers={"Accept":"text/event-stream","Origin":ORIGIN},
+                          timeout=240,
+                      )
+                      txt=sse.decode("utf-8","replace")
+                      if "event: error" in txt:
+                          raise RuntimeError("event_error")
+                      final=None
+                      for line in txt.splitlines():
+                          if line.startswith("data:"):
+                              try: final=json.loads(line[5:].strip())
+                              except Exception: pass
+                      if not isinstance(final,list) or not final or not isinstance(final[0],dict) or not final[0].get("url"):
+                          raise RuntimeError("missing_audio_url")
+                      audio_url=final[0]["url"]
+                      audio,_=req(audio_url,headers={"Origin":ORIGIN},timeout=60)
+                      bytes_len=len(audio)
+                      if bytes_len<5000:
+                          raise RuntimeError("audio_too_small")
+                      path=f"/tmp/{idx}_{name}.wav"
+                      open(path,"wb").write(audio)
+                      duration=float(subprocess.check_output([
+                          "ffprobe","-v","error","-show_entries","format=duration",
+                          "-of","default=nw=1:nk=1",path
+                      ]).decode().strip())
+                      ok=True
+                      break
+                  except Exception as e:
+                      error=repr(e)
+                      if attempt<2:
+                          time.sleep(2)
+              elapsed=time.time()-started
+              row={"case":name,"ok":ok,"elapsed_s":round(elapsed,2),"duration_s":round(duration,3),"bytes":bytes_len,"error":error if not ok else ""}
+              results.append(row)
+              print(json.dumps(row,ensure_ascii=False),flush=True)
+              time.sleep(1)
+
+          success=sum(1 for x in results if x["ok"])
+          summary={"success":success,"total":len(results),"rate":success/len(results),"results":results}
+          print("SUMMARY",json.dumps(summary,ensure_ascii=False),flush=True)
+          open("qwen3_stability_5x.json","w",encoding="utf-8").write(json.dumps(summary,ensure_ascii=False,indent=2))
+          if success < 4:
+              raise SystemExit(f"stability gate failed: {success}/5")
+          PY
+
+      - name: Upload stability report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: SAGI-QWEN3-OFFICIAL-SPACE-STABILITY-5X
+          path: qwen3_stability_5x.json
+          retention-days: 7
+          if-no-files-found: warn
