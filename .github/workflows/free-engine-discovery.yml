@@ -1,0 +1,34 @@
+name: Free TTS engine discovery
+on:
+  push:
+    branches: [feature/free-engine-discovery]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect public endpoint contracts
+        run: |
+          pip install gradio_client
+          python - <<'PY'
+          from gradio_client import Client
+          import json
+          for space in ["IndexTeam/IndexTTS-2.5-Demo","IndexTeam/IndexTTS-2-Demo","Qwen/Qwen3-TTS","FunAudioLLM/CosyVoice2-0.5B"]:
+              print("SPACE",space,flush=True)
+              try:
+                  c=Client(space,verbose=False)
+                  print(json.dumps(c.view_api(return_format="dict"),ensure_ascii=False,default=str)[:24000],flush=True)
+              except Exception as e:
+                  print(type(e).__name__,str(e)[:500],flush=True)
+          PY
+      - name: Actual Edge fallback audio smoke
+        run: |
+          pip install edge-tts
+          timeout 60 edge-tts --voice zh-CN-YunxiNeural --text "机会来了！球进了！塔城队完成绝杀！" --write-media edge-test.mp3
+          ffprobe -v error -show_entries format=duration,size -of json edge-test.mp3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SAGI-FREE-EDGE-SMOKE
+          path: edge-test.mp3
