@@ -11,8 +11,6 @@ const VOICE_HTML = "<!doctype html>\n<html lang=\"zh-CN\">\n<head>\n<meta charse
 
 const ALLOWED_CLIENT_ORIGINS = new Set([
   "https://suny820916.github.io",
-  "https://sagisports.cn",
-  "https://www.sagisports.cn",
   "https://sagi-voice-edge-relay.sg3544225.workers.dev"
 ]);
 
