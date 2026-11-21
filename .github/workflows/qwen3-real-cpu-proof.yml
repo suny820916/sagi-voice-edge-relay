@@ -50,30 +50,57 @@ jobs:
           test -s SAGI_QWEN3_1.7B_TACHENG_TEST.wav
           test "$(wc -c < SAGI_QWEN3_1.7B_TACHENG_TEST.wav)" -gt 5000
 
+      - name: Match Qwen3 audio to 20 seconds without changing pitch
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ffmpeg
+          FACTOR="$(python3 - <<'PY'
+          import wave
+          p="SAGI_QWEN3_1.7B_TACHENG_TEST.wav"
+          with wave.open(p,"rb") as w:
+              duration=w.getnframes()/w.getframerate()
+          factor=max(0.7,min(1.42,duration/20.0))
+          print(f"{factor:.6f}")
+          PY
+          )"
+          echo "tempo_factor=$FACTOR"
+          ffmpeg -hide_banner -loglevel error -y             -i SAGI_QWEN3_1.7B_TACHENG_TEST.wav             -filter:a "atempo=$FACTOR"             SAGI_QWEN3_1.7B_TACHENG_20S.wav
+          test -s SAGI_QWEN3_1.7B_TACHENG_20S.wav
+
       - name: Validate WAV
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import wave, os, json
-          p="SAGI_QWEN3_1.7B_TACHENG_TEST.wav"
-          with wave.open(p,"rb") as w:
-              meta={
-                  "channels":w.getnchannels(),
-                  "sample_width":w.getsampwidth(),
-                  "sample_rate":w.getframerate(),
-                  "frames":w.getnframes(),
-                  "duration":round(w.getnframes()/w.getframerate(),3),
-                  "bytes":os.path.getsize(p),
-                  "engine":"Qwen3-TTS-12Hz-1.7B-CustomVoice via speech.cpp",
-                  "voice":"uncle_fu",
-                  "language":"zh"
-              }
+          def read_meta(p):
+              with wave.open(p,"rb") as w:
+                  return {
+                      "channels":w.getnchannels(),
+                      "sample_width":w.getsampwidth(),
+                      "sample_rate":w.getframerate(),
+                      "frames":w.getnframes(),
+                      "duration":round(w.getnframes()/w.getframerate(),3),
+                      "bytes":os.path.getsize(p),
+                  }
+          raw=read_meta("SAGI_QWEN3_1.7B_TACHENG_TEST.wav")
+          matched=read_meta("SAGI_QWEN3_1.7B_TACHENG_20S.wav")
+          meta={
+              "engine":"Qwen3-TTS-12Hz-1.7B-CustomVoice via speech.cpp",
+              "voice":"uncle_fu",
+              "language":"zh",
+              "raw":raw,
+              "matched_20s":matched,
+              "tempo_factor":round(raw["duration"]/20.0,4),
+              "tempo_method":"ffmpeg atempo pitch-preserving"
+          }
           print(json.dumps(meta,ensure_ascii=False,indent=2))
-          assert meta["channels"] >= 1
-          assert meta["sample_width"] in (2,4)
-          assert meta["sample_rate"] >= 16000
-          assert meta["frames"] > 1000
+          assert raw["channels"] >= 1
+          assert raw["sample_width"] in (2,4)
+          assert raw["sample_rate"] >= 16000
+          assert raw["frames"] > 1000
+          assert 19.75 <= matched["duration"] <= 20.25, matched["duration"]
           open("SAGI_QWEN3_1.7B_TACHENG_TEST.json","w",encoding="utf-8").write(json.dumps(meta,ensure_ascii=False,indent=2))
           PY
 
@@ -83,6 +110,7 @@ jobs:
           name: SAGI-QWEN3-1.7B-TACHENG-REAL
           path: |
             SAGI_QWEN3_1.7B_TACHENG_TEST.wav
+            SAGI_QWEN3_1.7B_TACHENG_20S.wav
             SAGI_QWEN3_1.7B_TACHENG_TEST.json
           retention-days: 7
           if-no-files-found: error
