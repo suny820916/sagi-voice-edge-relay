@@ -1,0 +1,5 @@
+name = "sagi-voice-edge-relay-beta"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+compatibility_flags = ["nodejs_compat"]
