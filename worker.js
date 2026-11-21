@@ -1,3 +1,4 @@
+// BUILD_TRIGGER: edge-direct-https-upgrade-r3
 import { synthesizeEdgeDirect } from "./edge-tts-direct.js";
 
 // BUILD_TRIGGER: wrangler-4.165.0-2026-11-21
