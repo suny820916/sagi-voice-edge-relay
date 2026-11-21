@@ -1,0 +1,58 @@
+name: Probe Qwen Official HF Space API
+
+on:
+  push:
+    branches: [feature/v1.5-hf-space-probe]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe Space config and API info
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://qwen-qwen3-tts.hf.space"
+          for PATHNAME in /config /gradio_api/info /api/info; do
+            echo "=== $PATHNAME ==="
+            CODE="$(curl -L --silent --show-error --max-time 30 -D /tmp/h -o /tmp/b -w '%{http_code}' "$BASE$PATHNAME" || true)"
+            echo "status=$CODE"
+            grep -Ei '^(content-type|access-control-allow-origin|server|location):' /tmp/h || true
+            head -c 3000 /tmp/b || true
+            echo
+          done
+
+      - name: Parse Gradio named endpoints if available
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request
+          urls=[
+              "https://qwen-qwen3-tts.hf.space/gradio_api/info",
+              "https://qwen-qwen3-tts.hf.space/config",
+          ]
+          for u in urls:
+              try:
+                  with urllib.request.urlopen(u,timeout=30) as r:
+                      raw=r.read().decode("utf-8","replace")
+                  data=json.loads(raw)
+                  print("URL",u)
+                  if isinstance(data,dict):
+                      print("keys",list(data.keys())[:30])
+                      named=data.get("named_endpoints")
+                      if isinstance(named,dict):
+                          print("named_endpoints",list(named.keys()))
+                          for k,v in named.items():
+                              if "custom" in k.lower() or "tts" in k.lower() or "generate" in k.lower():
+                                  print(k, json.dumps(v,ensure_ascii=False)[:4000])
+                      deps=data.get("dependencies")
+                      if isinstance(deps,list):
+                          for i,d in enumerate(deps):
+                              api_name=d.get("api_name") if isinstance(d,dict) else None
+                              if api_name:
+                                  print("dep",i,"api_name",api_name)
+              except Exception as e:
+                  print("ERR",u,repr(e))
+          PY
