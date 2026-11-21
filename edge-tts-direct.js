@@ -81,7 +81,7 @@ async function synthesizeOnce(text,voice,rate,pitch,unixSeconds){
   throw last||new Error("EDGE_TTS_UNAVAILABLE")
 }
 
-const GOAL_WORDS=/绝杀|进球|破门|球进了|点球|帽子戏法|扳平|反超|冠军|夺冠|晋级|出线|淘汰|制胜|最后一击|最后一分钟|读秒|历史|奇迹|3[:：比-]\\s*\\d|\\d\\s*[:：比-]\\s*\\d/;
+const GOAL_WORDS=/绝杀|进球|破门|球进了|点球|帽子戏法|扳平|反超|冠军|夺冠|晋级|出线|淘汰|制胜|最后一击|最后一分钟|读秒|历史|奇迹|3[:：比-]\s*\d|\d\s*[:：比-]\s*\d/;
 const ATTACK_WORDS=/反击|冲刺|突破|传中|射门|头球|抢断|压迫|推进|转换|单刀|禁区|门前|攻势|机会|加速|逼抢/;
 const WARM_WORDS=/热爱|坚持|梦想|孩子|陪伴|家乡|普通人|平凡|记住|记录|青春|岁月|故事/;
 
