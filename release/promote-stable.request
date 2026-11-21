@@ -1,0 +1,7 @@
+SAGI VOICE STABLE PROMOTION REQUEST
+target=R3.3
+source=beta
+requested_after:
+- Source Gate: 44862704872 SUCCESS
+- Beta Candidate E2E: 44862704677 SUCCESS
+policy=stability-first
