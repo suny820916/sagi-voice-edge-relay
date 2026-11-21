@@ -68,8 +68,20 @@ export default {
       }), { status: 502, headers: h });
     }
     const outHeaders = new Headers(response.headers);
+    // Safari-safe streaming: upstream Content-Length can differ after Cloudflare
+    // normalizes/compresses the streamed audio body. Never forward stale transport
+    // metadata or Safari may abort fetch() with "Load failed".
+    for (const h of [
+      "content-length",
+      "content-encoding",
+      "transfer-encoding",
+      "connection",
+      "keep-alive"
+    ]) outHeaders.delete(h);
     for (const [k,v] of Object.entries(cors(origin))) outHeaders.set(k,v);
+    outHeaders.set("Cache-Control", "no-store");
     outHeaders.set("X-SAGI-Relay", "workers.dev");
+    outHeaders.set("X-SAGI-Safari-Safe", "1");
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
