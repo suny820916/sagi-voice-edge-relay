@@ -29,6 +29,9 @@ jobs:
           grep -q 'url.pathname === "/api/voice-router"' worker.js
           grep -q 'X-SAGI-Voice-Route' worker.js
           grep -q 'renderTokenCache' worker.js
+          grep -q 'synthesizeQwen3' worker.js
+          test -f qwen3-tts-client.js
+          test -f qwen3-service/app.py
           grep -Eq "fetch(With429Retry)?\\('/api/voice-router'" worker.js
           ! grep -q 'sagisports.cn' worker.js
           node --input-type=module <<'JS'
@@ -49,7 +52,7 @@ jobs:
           echo $! > /tmp/sagi-beta-worker.pid
           READY=0
           for i in $(seq 1 40); do
-            if curl --silent --fail http://127.0.0.1:8787/ | grep -q 'BETA 候选版 · Router 自检'; then
+            if curl --silent --fail http://127.0.0.1:8787/ | grep -Eq 'BETA 候选版 · (Router 自检|Qwen3-TTS)'; then
               READY=1
               break
             fi
@@ -73,7 +76,7 @@ jobs:
           echo "audio_bytes=$SIZE"
           test "$SIZE" -gt 5000
           grep -qi '^X-SAGI-Voice-Router: 1' /tmp/router.headers
-          grep -Eqi '^X-SAGI-Voice-Route: (edge-direct|render-fallback)' /tmp/router.headers
+          grep -Eqi '^X-SAGI-Voice-Route: (qwen3-tts|edge-direct|render-fallback)' /tmp/router.headers
           grep -qi '^X-SAGI-Voice-Complete: 1' /tmp/router.headers
           echo "SAGI VOICE BETA ROUTER E2E OK"
 
