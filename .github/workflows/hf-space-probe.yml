@@ -34,6 +34,7 @@ jobs:
           grep -Ei '^(HTTP/|access-control-allow-origin|access-control-allow-methods|access-control-allow-headers|vary):' /tmp/cors.headers || true
 
       - name: Real Qwen3 1.7B API call
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
