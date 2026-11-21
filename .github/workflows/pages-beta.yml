@@ -1,0 +1,30 @@
+name: Deploy SAGI VOICE V1.5 Beta Pages
+on:
+  push:
+    branches: [feature/v1.5-github-pages-beta]
+    paths: ["beta-site/**",".github/workflows/pages-beta.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages-v15-beta
+  cancel-in-progress: true
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Beta site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: beta-site
+      - name: Deploy Beta site
+        id: deployment
+        uses: actions/deploy-pages@v4
