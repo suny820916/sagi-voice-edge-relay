@@ -57,14 +57,13 @@ jobs:
           import json
           parts=[
             "比赛已经来到最后时刻，双方依然没有拉开差距。",
-            "塔城队还在向前推进，右路拿球，传中送到禁区，机会来了！",
-            "头球！球进了！就在最后一分钟，塔城队完成绝杀！",
-            "这一刻，他们等得太久了，他们终于把自己的名字，写进了历史！"
+            "塔城队还在向前推进，右路拿球，传中送到禁区，机会来了！头球！球进了！",
+            "就在最后一分钟，塔城队完成绝杀！这一刻，他们等得太久了，他们终于把自己的名字，写进了历史！"
           ]
           for i,p in enumerate(parts):
               json.dump({"data":[p,"Chinese","Uncle_fu","中国职业足球现场直播解说员。保持真实现场感；关键动作短促有力；高潮明显爆发；必须准确朗读原文。","1.7B"]},open(f"/tmp/p{i}.json","w"),ensure_ascii=False)
           PY
-          for I in 0 1 2 3; do
+          for I in 0 1 2; do
             OK=0
             for TRY in 1 2 3 4; do
               echo "segment=$I try=$TRY"
