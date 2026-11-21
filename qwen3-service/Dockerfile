@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HF_HOME=/models/hf
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip libsndfile1 ca-certificates && \
+    python3 python3-pip libsndfile1 ffmpeg ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
