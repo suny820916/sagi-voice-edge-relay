@@ -1,6 +1,6 @@
 // SAGI VOICE QWEN3-TTS CLIENT
 // Optional primary engine. Configure Worker secrets/vars:
-// QWEN3_TTS_URL=https://<gpu-service>/v1/tts
+// QWEN3_TTS_URL=https://<gpu-service>  (or a full .../v1/tts endpoint)
 // QWEN3_TTS_TOKEN=<optional bearer token>
 // If unavailable, worker.js falls back to Edge Neural automatically.
 
@@ -62,6 +62,7 @@ function buildInstruction(payload){
 export async function synthesizeQwen3(payload,env){
   const base=String(env?.QWEN3_TTS_URL||"").trim().replace(/\/$/,"");
   if(!base)throw new Error("QWEN3_TTS_NOT_CONFIGURED");
+  const endpoint=/\/v1\/tts$/i.test(base)?base:base+"/v1/tts";
   const {style,instruct}=buildInstruction(payload);
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),Number(env?.QWEN3_TTS_TIMEOUT_MS||45000));
@@ -70,7 +71,7 @@ export async function synthesizeQwen3(payload,env){
     const headers={"Content-Type":"application/json","Accept":"audio/wav"};
     const token=String(env?.QWEN3_TTS_TOKEN||"").trim();
     if(token)headers.Authorization="Bearer "+token;
-    r=await fetch(base+"/v1/tts",{
+    r=await fetch(endpoint,{
       method:"POST",headers,signal:controller.signal,
       body:JSON.stringify({
         text:String(payload.text||""),
