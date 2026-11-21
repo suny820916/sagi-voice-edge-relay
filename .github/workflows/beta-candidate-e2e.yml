@@ -49,7 +49,7 @@ jobs:
           echo $! > /tmp/sagi-beta-worker.pid
           READY=0
           for i in $(seq 1 40); do
-            if curl --silent --fail http://127.0.0.1:8787/ | grep -q 'BETA 候选版 · Router 自检 · R3.3'; then
+            if curl --silent --fail http://127.0.0.1:8787/ | grep -q 'BETA 候选版 · Router 自检'; then
               READY=1
               break
             fi
