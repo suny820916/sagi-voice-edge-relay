@@ -80,6 +80,7 @@ export async function synthesizeQwen3(payload,env){
         instruct,
         style,
         speed:Number(payload.speed||1),
+        target_duration:Number(payload.target_duration||0)>0?Number(payload.target_duration):null,
         intensity:Number(payload.intensity||65),
         segment_index:Number(payload.segment_index||0),
         segment_count:Number(payload.segment_count||1)
@@ -108,6 +109,9 @@ export async function synthesizeQwen3(payload,env){
     performance_style:style,
     speaker:r.headers.get("X-Qwen-Speaker")||speakerFor(payload.mode,env),
     tempo:r.headers.get("X-SAGI-Tempo")||"",
+    raw_duration:r.headers.get("X-SAGI-Raw-Duration")||"",
+    target_duration:r.headers.get("X-SAGI-Target-Duration")||"",
+    final_duration:r.headers.get("X-SAGI-Final-Duration")||"",
     instruct
   };
 }
