@@ -32,6 +32,7 @@ jobs:
           grep -q 'synthesizeQwen3' worker.js
           test -f qwen3-tts-client.js
           test -f qwen3-service/app.py
+          python3 -m py_compile qwen3-service/app.py
           grep -Eq "fetch(With429Retry)?\\('/api/voice-router'" worker.js
           ! grep -q 'sagisports.cn' worker.js
           node --input-type=module <<'JS'
@@ -44,6 +45,67 @@ jobs:
 
       - name: Wrangler dry-run
         run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
+
+      - name: Start deterministic Qwen3 mock
+        run: |
+          set -euo pipefail
+          cat > /tmp/qwen-mock.mjs <<'JS'
+          import http from 'node:http';
+          function wavSilence(seconds=1,sr=24000){
+            const frames=Math.max(1,Math.round(seconds*sr));
+            const out=Buffer.alloc(44+frames*2);
+            out.write('RIFF',0);out.writeUInt32LE(36+frames*2,4);out.write('WAVE',8);
+            out.write('fmt ',12);out.writeUInt32LE(16,16);out.writeUInt16LE(1,20);
+            out.writeUInt16LE(1,22);out.writeUInt32LE(sr,24);out.writeUInt32LE(sr*2,28);
+            out.writeUInt16LE(2,32);out.writeUInt16LE(16,34);out.write('data',36);
+            out.writeUInt32LE(frames*2,40);
+            return out;
+          }
+          const server=http.createServer((req,res)=>{
+            if(req.method==='GET'&&req.url==='/health'){
+              res.writeHead(200,{'Content-Type':'application/json'});
+              return res.end(JSON.stringify({ok:true,engine:'qwen3-tts-mock'}));
+            }
+            if(req.method==='POST'&&req.url==='/v1/tts'){
+              if(req.headers.authorization!=='Bearer test-token'){
+                res.writeHead(401,{'Content-Type':'application/json'});
+                return res.end(JSON.stringify({detail:'unauthorized'}));
+              }
+              let raw='';
+              req.setEncoding('utf8');
+              req.on('data',d=>raw+=d);
+              req.on('end',()=>{
+                let body={};try{body=JSON.parse(raw)}catch{}
+                if(!body.text){
+                  res.writeHead(400,{'Content-Type':'application/json'});
+                  return res.end(JSON.stringify({detail:'text_required'}));
+                }
+                const audio=wavSilence(1.2,24000);
+                res.writeHead(200,{
+                  'Content-Type':'audio/wav',
+                  'Content-Length':String(audio.length),
+                  'X-Qwen-Model':'Qwen3-TTS-MOCK',
+                  'X-Qwen-Speaker':String(body.speaker||'unknown')
+                });
+                res.end(audio);
+              });
+              return;
+            }
+            res.writeHead(404);res.end();
+          });
+          server.listen(8790,'127.0.0.1');
+          JS
+          nohup node /tmp/qwen-mock.mjs > /tmp/qwen-mock.log 2>&1 &
+          echo $! > /tmp/qwen-mock.pid
+          for i in $(seq 1 20); do
+            if curl --silent --fail http://127.0.0.1:8790/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --silent --fail http://127.0.0.1:8790/health
+          cat > .dev.vars <<'EOF'
+          QWEN3_TTS_URL="http://127.0.0.1:8790"
+          QWEN3_TTS_TOKEN="test-token"
+          EOF
 
       - name: Start beta Worker locally
         run: |
@@ -76,11 +138,16 @@ jobs:
           echo "audio_bytes=$SIZE"
           test "$SIZE" -gt 5000
           grep -qi '^X-SAGI-Voice-Router: 1' /tmp/router.headers
-          grep -Eqi '^X-SAGI-Voice-Route: (qwen3-tts|edge-direct|render-fallback)' /tmp/router.headers
+          grep -qi '^X-SAGI-Voice-Route: qwen3-tts' /tmp/router.headers
+          grep -qi '^X-SAGI-Voice-Provider: Qwen3-TTS' /tmp/router.headers
+          grep -qi '^X-SAGI-Voice-Model: Qwen3-TTS-MOCK' /tmp/router.headers
+          grep -qi '^X-SAGI-Voice-Fallback: 0' /tmp/router.headers
           grep -qi '^X-SAGI-Voice-Complete: 1' /tmp/router.headers
-          echo "SAGI VOICE BETA ROUTER E2E OK"
+          grep -qi '^Content-Type: audio/wav' /tmp/router.headers
+          echo "SAGI VOICE QWEN3 PRIMARY ROUTE E2E OK"
 
       - name: Runtime log
         if: always()
         run: |
           tail -n 160 /tmp/sagi-beta-worker.log 2>/dev/null || true
+          tail -n 80 /tmp/qwen-mock.log 2>/dev/null || true
