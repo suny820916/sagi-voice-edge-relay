@@ -14,6 +14,10 @@ jobs:
           pip install gradio_client
           python - <<'PY'
           from gradio_client import Client
+          from huggingface_hub import HfApi
+          for name in ['IndexTTS','CosyVoice','Kokoro']:
+              for s in HfApi().list_spaces(search=name,limit=8):
+                  print('DISCOVERED',s.id,flush=True)
           import json
           for space in ["IndexTeam/IndexTTS-2.5-Demo","IndexTeam/IndexTTS-2-Demo","Qwen/Qwen3-TTS","FunAudioLLM/CosyVoice2-0.5B"]:
               print("SPACE",space,flush=True)
@@ -25,6 +29,7 @@ jobs:
           PY
       - name: Actual Edge fallback audio smoke
         run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
           pip install edge-tts
           timeout 60 edge-tts --voice zh-CN-YunxiNeural --text "机会来了！球进了！塔城队完成绝杀！" --write-media edge-test.mp3
           ffprobe -v error -show_entries format=duration,size -of json edge-test.mp3
