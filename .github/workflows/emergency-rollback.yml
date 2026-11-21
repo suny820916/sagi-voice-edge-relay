@@ -1,0 +1,56 @@
+name: SAGI VOICE Emergency Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type ROLLBACK STABLE R3.2'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard
+        run: |
+          if [ "${{ inputs.confirm }}" != "ROLLBACK STABLE R3.2" ]; then
+            echo "::error::Confirmation text does not match."
+            exit 1
+          fi
+
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Restore certified stable branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main stable-r3.2
+          CURRENT="$(git rev-parse origin/main)"
+          STABLE="$(git rev-parse origin/stable-r3.2)"
+          echo "current=$CURRENT"
+          echo "stable=$STABLE"
+          if [ "$CURRENT" = "$STABLE" ]; then
+            echo "main is already at stable-r3.2"
+            exit 0
+          fi
+          git push origin "$STABLE:refs/heads/main" --force-with-lease="refs/heads/main:$CURRENT"
+          echo "SAGI VOICE main restored to stable-r3.2."
+
+      - name: Rollback summary
+        run: |
+          {
+            echo "# SAGI VOICE Emergency Rollback"
+            echo ""
+            echo "Production source was restored to `stable-r3.2`."
+            echo "Cloudflare should redeploy the main branch from the certified rollback point."
+            echo "Run the Stable Gate immediately after deployment."
+          } >> "$GITHUB_STEP_SUMMARY"
