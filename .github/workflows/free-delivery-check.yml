@@ -1,0 +1,38 @@
+name: Free delivery audit
+on:
+  push:
+    branches: [feature/free-engine-discovery]
+    paths: ['.github/workflows/free-delivery-check.yml']
+  workflow_dispatch:
+jobs:
+  delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build dry run without deploying production
+        run: |
+          npm install --ignore-scripts
+          npm run check
+      - name: Assemble standalone assets
+        if: always()
+        run: |
+          cp free-engine-router.mjs free-provider-adapters.mjs free-mobile/
+          tar -czf /tmp/sagi-free-v16.tar.gz -C free-mobile .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: SAGI-FREE-V16-package
+          path: /tmp/sagi-free-v16.tar.gz
+      - name: Check allowed origins without synthesis
+        if: always()
+        run: |
+          for origin in https://suny820916.github.io https://raw.githack.com https://rawcdn.githack.com; do
+            for endpoint in https://sagi-voice-edge-relay.sg3544225.workers.dev/api/direct-tts https://qwen-qwen3-tts.hf.space/gradio_api/call/generate_custom_voice https://indexteam-indextts-2-5-demo.hf.space/gradio_api/call/gen_single; do
+              echo "$origin $endpoint"
+              curl -sS --max-time 15 -X OPTIONS -H "Origin: $origin" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type" -D - -o /dev/null "$endpoint" | grep -Ei '^(HTTP/|access-control-allow-origin:|access-control-allow-methods:|access-control-allow-headers:)' || true
+            done
+          done
