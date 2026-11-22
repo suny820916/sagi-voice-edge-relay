@@ -30,6 +30,7 @@ jobs:
             wav.write('data',36);wav.writeUInt32LE(32000,40);
             for(let i=0;i<16000;i++)wav.writeInt16LE(Math.round(4000*Math.sin(i*.17)),44+i*2);
             await page.route('https://qwen-qwen3-tts.hf.space/**',r=>r.fulfill({status:503,headers:{'access-control-allow-origin':'*'}}));
+            await page.route('https://indexteam-indextts-2-5-demo.hf.space/**',r=>r.fulfill({status:503,headers:{'access-control-allow-origin':'*'}}));
             await page.route('https://sagi-voice-edge-relay.sg3544225.workers.dev/**',r=>r.fulfill({status:200,contentType:'audio/wav',headers:{'access-control-allow-origin':'*'},body:wav}));
             await page.goto('http://127.0.0.1:8765/');
             await page.locator('#text').fill('塔城队进球了！');
