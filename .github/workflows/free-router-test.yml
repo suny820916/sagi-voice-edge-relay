@@ -1,0 +1,29 @@
+name: Free router tests
+on:
+  push:
+    branches: [feature/free-engine-discovery]
+jobs:
+  router:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {generateFree} from './free-engine-router.mjs';
+          const request={text:'塔城队进球了！'};
+          const audio=new Blob([new Uint8Array(512)],{type:'audio/wav'});
+          const edge={id:'edge',allowed:true,generate:async()=>({audio})};
+          const qwen={id:'qwen',allowed:true,publicDemo:true,generate:async()=>{throw Error('unavailable')}};
+          const index={id:'index',allowed:true,publicDemo:true,timeoutMs:100,generate:()=>new Promise(()=>{})};
+          let result=await generateFree(request,[qwen,index,edge],{allowPublicDemo:true});
+          assert.equal(result.engine,'edge'); assert.equal(result.errors.length,2);
+          result=await generateFree(request,[qwen,index,edge]);
+          assert.equal(result.fallback,false);
+          await assert.rejects(generateFree(request,[{...edge,generate:async()=>({audio:new Blob(['bad'])})}]));
+          await assert.rejects(generateFree({text:' '},[edge]));
+          console.log('router mock gates passed');
+          JS
