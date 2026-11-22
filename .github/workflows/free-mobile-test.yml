@@ -2,6 +2,9 @@ name: Free mobile UI
 on:
   push:
     branches: [feature/free-engine-discovery]
+  pull_request:
+    branches: [main]
+    paths: ['free-mobile/**', 'free-engine-router.mjs', 'free-provider-adapters.mjs', '.github/workflows/free-mobile-test.yml']
   workflow_dispatch:
 jobs:
   browser:
@@ -11,6 +14,8 @@ jobs:
       fail-fast: false
       matrix:
         engine: [chromium, webkit]
+    permissions:
+      contents: read
     env:
       TEST_ENGINE: ${{ matrix.engine }}
     steps:
