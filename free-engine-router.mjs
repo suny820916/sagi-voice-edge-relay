@@ -15,7 +15,8 @@ export async function generateFree(request, providers, options = {}) {
           const result = await provider.generate(request, controller.signal);
           if (!(result?.audio instanceof Blob) || result.audio.size < 128 || !result.audio.type.startsWith("audio/")) throw new Error("invalid audio");
           const durationSeconds = options.validateAudio ? await options.validateAudio(result.audio, controller.signal) : undefined;
-          return { ...result, durationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : undefined };
+          if (options.validateAudio && (!Number.isFinite(durationSeconds) || durationSeconds <= 0)) throw new Error('invalid decoded duration');
+          return { ...result, durationSeconds };
         }),
         new Promise((_, reject) => { timer = setTimeout(() => { reject(new Error("timeout")); controller.abort(); }, ms); }),
         new Promise((_, reject) => {
