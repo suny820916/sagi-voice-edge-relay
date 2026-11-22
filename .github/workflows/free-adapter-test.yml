@@ -1,0 +1,41 @@
+name: Free adapter contract
+on:
+  push:
+    branches: [feature/free-engine-discovery]
+    paths: ['free-provider-adapters.mjs','.github/workflows/free-adapter-test.yml']
+jobs:
+  adapters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {makeProviders,parseGradioResult} from './free-provider-adapters.mjs';
+          assert.equal(parseGradioResult('event: complete\r\ndata: [{"url":"https://example.org/a.wav"}]'), 'https://example.org/a.wav');
+          assert.throws(()=>parseGradioResult('event: error\ndata: null'));
+          let calls=0;
+          const [qwen]=makeProviders(async (url,init)=>{
+            assert.ok(init.signal);
+            calls++;
+            if(calls===1)return Response.json({event_id:'test'});
+            if(calls===2)return new Response('event: complete\ndata: [{"url":"https://qwen-qwen3-tts.hf.space/file=a.wav"}]');
+            return new Response(new Uint8Array(512),{headers:{'Content-Type':'audio/wav'}});
+          });
+          assert.equal((await qwen.generate({text:'测试'},new AbortController().signal)).audio.size,512);
+          console.log('Mock Qwen contract passed');
+          JS
+      - name: Real Edge one-request smoke
+        run: |
+          curl --fail --max-time 60 -sS -D edge-headers.txt -o edge-real.mp3 -H 'Origin: https://suny820916.github.io' -H 'Content-Type: application/json' -d '{"text":"塔城队进球了！","mode":"ai_male"}' https://sagi-voice-edge-relay.sg3544225.workers.dev/api/direct-tts
+          grep -i '^access-control-allow-origin: https://suny820916.github.io' edge-headers.txt
+          python -m pip install mutagen
+          python -c 'from mutagen.mp3 import MP3; a=MP3("edge-real.mp3"); print(a.info.length); assert a.info.length>0.5'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EDGE-ADAPTER-REAL
+          path: edge-real.mp3
