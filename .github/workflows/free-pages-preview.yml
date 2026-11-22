@@ -1,0 +1,40 @@
+name: Free mobile Pages preview
+on:
+  push:
+    branches: [feature/free-engine-discovery]
+    paths: ['.github/workflows/free-pages-preview.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: sagi-free-pages-preview
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure free public Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - run: |
+          cp free-engine-router.mjs free-provider-adapters.mjs free-mobile/
+          mkdir -p site/free
+          cp -r free-mobile/. site/free/
+          printf '<!doctype html><meta charset="utf-8"><a href="./free/">SAGI VOICE FREE V1.6 测试版</a>' > site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: package
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy preview only
+        id: deployment
+        uses: actions/deploy-pages@v4
