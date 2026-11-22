@@ -1,20 +1,35 @@
 const QWEN="https://qwen-qwen3-tts.hf.space";
+const INDEX="https://indexteam-indextts-2-5-demo.hf.space";
 const EDGE="https://sagi-voice-edge-relay.sg3544225.workers.dev";
 async function checked(fetcher,url,init,signal){
   const r=await fetcher(url,{...init,signal,cache:"no-store"});
   if(!r.ok) throw new Error("HTTP "+r.status);
   return r;
 }
-export function parseGradioResult(s){
+export function parseGradioData(s){
   for(const block of s.replace(/\r\n/g,"\n").split(/\n\n/)){
     const event=block.match(/^event:\s*([^\n]+)/m)?.[1]?.trim();
     if(event==="error")throw new Error("公开引擎任务失败");
     if(event!=="complete")continue;
     const data=block.split("\n").filter(x=>x.startsWith("data:")).map(x=>x.slice(5).trimStart()).join("\n");
     const value=JSON.parse(data);
-    if(Array.isArray(value)&&typeof value[0]?.url==="string")return value[0].url;
+    if(Array.isArray(value))return value;
   }
   throw new Error("未收到完整音频");
+}
+export function parseGradioResult(s){
+  const data=parseGradioData(s);
+  const file=data[0]?.value??data[0];
+  if(typeof file?.url!=="string")throw new Error("音频地址缺失");
+  return file.url;
+}
+async function gradioCall(fetcher,origin,name,data,signal){
+  const endpoint=origin+"/gradio_api/call/"+name;
+  const r=await checked(fetcher,endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({data})},signal);
+  const {event_id}=await r.json();
+  if(typeof event_id!=="string"||!event_id)throw new Error("任务编号缺失");
+  const stream=await checked(fetcher,endpoint+"/"+encodeURIComponent(event_id),{headers:{Accept:"text/event-stream"}},signal);
+  return parseGradioData(await stream.text());
 }
 export function makeProviders(fetcher=fetch){
   return [
@@ -26,6 +41,19 @@ export function makeProviders(fetcher=fetch){
       const stream=await checked(fetcher,endpoint+"/"+encodeURIComponent(event_id),{headers:{Accept:"text/event-stream"}},signal);
       const url=new URL(parseGradioResult(await stream.text()),QWEN);
       if(url.origin!==QWEN)throw new Error("不受信任的音频地址");
+      const media=await checked(fetcher,url.href,{},signal);
+      return {audio:await media.blob(),durationMode:"自然时长"};
+    }},
+    {id:"IndexTTS 2.5",allowed:true,publicDemo:true,timeoutMs:60000,generate:async(req,signal)=>{
+      const ex=await gradioCall(fetcher,INDEX,"on_example_click",[0],signal);
+      const ref=ex[0]?.value??ex[0];
+      if(!ref||typeof ref.path!=="string")throw new Error("示例音色不可用");
+      const file={path:ref.path,meta:{_type:"gradio.FileData"}};
+      const vectors=req.style==="goal"?[0.7,0,0,0,0,0,0.3,0]:req.style==="warm"?[0.15,0,0.15,0,0,0.15,0,0.55]:[0.2,0,0,0,0,0,0,0.8];
+      const data=await gradioCall(fetcher,INDEX,"gen_single",["Use emotion vectors",file,req.text,"ZH",file,0.65,...vectors,"",false,120,1,true,0.8,30,0.8,0,3,10,1500],signal);
+      const out=data[0]?.value??data[0];
+      const url=new URL(out?.url||"",INDEX);
+      if(!out?.url||url.origin!==INDEX)throw new Error("不受信任的音频地址");
       const media=await checked(fetcher,url.href,{},signal);
       return {audio:await media.blob(),durationMode:"自然时长"};
     }},
