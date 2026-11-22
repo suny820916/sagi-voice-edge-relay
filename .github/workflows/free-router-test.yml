@@ -32,7 +32,9 @@ jobs:
           await assert.rejects(generateFree(request,[stalled,{...edge,generate:async()=>{called=true;return {audio}}}],{signal:cancel.signal}),/已取消/);
           assert.equal(called,false);
           let validations=0;
-          result=await generateFree(request,[{...edge,id:'corrupt'},edge],{validateAudio:async()=>{if(++validations===1)throw Error('decode failed')}});
+          result=await generateFree(request,[{...edge,id:'corrupt'},edge],{validateAudio:async()=>{if(++validations===1)throw Error('decode failed');return 1}});
           assert.equal(result.engine,'edge');assert.equal(result.fallback,true);
+          result=await generateFree(request,[{...edge,id:'invalid-duration'},edge],{validateAudio:async()=>++validations===3?NaN:1});
+          assert.equal(result.engine,'edge');assert.equal(result.durationSeconds,1);
           console.log('router mock gates passed');
           JS
