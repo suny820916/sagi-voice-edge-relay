@@ -33,25 +33,30 @@ jobs:
           import assert from 'node:assert/strict';
           const browser=await ({chromium,webkit}[process.env.TEST_ENGINE]).launch({headless:true});
           try{
-            const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+            const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,serviceWorkers:'block'});
             const wav=Buffer.alloc(44+16000*2);
             wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);
             wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);
             wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);
             wav.write('data',36);wav.writeUInt32LE(32000,40);
             for(let i=0;i<16000;i++)wav.writeInt16LE(Math.round(4000*Math.sin(i*.17)),44+i*2);
-            await page.route('https://qwen-qwen3-tts.hf.space/**',r=>r.fulfill({status:503,headers:{'access-control-allow-origin':'*'}}));
-            await page.route('https://indexteam-indextts-2-5-demo.hf.space/**',r=>r.fulfill({status:503,headers:{'access-control-allow-origin':'*'}}));
-            await page.route('https://sagi-voice-edge-relay.sg3544225.workers.dev/**',r=>r.fulfill({status:200,contentType:'audio/wav',headers:{'access-control-allow-origin':'*'},body:wav}));
+            const cors={'access-control-allow-origin':'*','access-control-allow-methods':'POST, GET, OPTIONS','access-control-allow-headers':'content-type, accept'};
+            const reply=(r,status,extra={})=>r.fulfill(r.request().method()==='OPTIONS'?{status:204,headers:cors}:{status,headers:cors,...extra});
+            page.on('pageerror',e=>console.log('pageerror',e.message));
+            page.on('requestfailed',r=>console.log('requestfailed',r.method(),r.url(),r.failure()?.errorText));
+            await page.route('https://qwen-qwen3-tts.hf.space/**',r=>reply(r,503));
+            await page.route('https://indexteam-indextts-2-5-demo.hf.space/**',r=>reply(r,503));
+            await page.route('https://sagi-voice-edge-relay.sg3544225.workers.dev/**',r=>reply(r,200,{contentType:'audio/wav',body:wav}));
             await page.goto('http://127.0.0.1:8765/');
             await page.locator('#text').fill('塔城队进球了！');
             await page.locator('#consent').check();
             await page.locator('#generate').click();
-            await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('已自动切换：Edge TTS'));
+            await page.waitForFunction(()=>!document.querySelector('#generate').disabled);
+            assert.match(await page.locator('#status').textContent(),/已自动切换：Edge TTS/);
             assert.equal(await page.locator('#save').isEnabled(),true);
             // Regression: failed generation must not expose the preceding audio.
             await page.unroute('https://sagi-voice-edge-relay.sg3544225.workers.dev/**');
-            await page.route('https://sagi-voice-edge-relay.sg3544225.workers.dev/**',r=>r.fulfill({status:503,headers:{'access-control-allow-origin':'*'}}));
+            await page.route('https://sagi-voice-edge-relay.sg3544225.workers.dev/**',r=>reply(r,503));
             await page.locator('#consent').uncheck();
             await page.locator('#generate').click();
             await page.waitForFunction(()=>!document.querySelector('#generate').disabled);
