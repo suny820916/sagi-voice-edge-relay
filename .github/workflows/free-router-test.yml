@@ -25,5 +25,14 @@ jobs:
           assert.equal(result.fallback,false);
           await assert.rejects(generateFree(request,[{...edge,generate:async()=>({audio:new Blob(['bad'])})}]));
           await assert.rejects(generateFree({text:' '},[edge]));
+          const cancel=new AbortController();
+          let called=false;
+          const stalled={...index,allowed:true,publicDemo:false,timeoutMs:5000,generate:(req,signal)=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('abort'))))};
+          setTimeout(()=>cancel.abort(),20);
+          await assert.rejects(generateFree(request,[stalled,{...edge,generate:async()=>{called=true;return {audio}}}],{signal:cancel.signal}),/已取消/);
+          assert.equal(called,false);
+          let validations=0;
+          result=await generateFree(request,[{...edge,id:'corrupt'},edge],{validateAudio:async()=>{if(++validations===1)throw Error('decode failed')}});
+          assert.equal(result.engine,'edge');assert.equal(result.fallback,true);
           console.log('router mock gates passed');
           JS
