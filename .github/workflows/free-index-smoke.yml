@@ -20,9 +20,24 @@ jobs:
           c=Client("IndexTeam/IndexTTS-2.5-Demo")
           ex=c.predict(0,api_name="/on_example_click")
           ref=ex[0]
-          assert isinstance(ref,str),type(ref)
+          print("example reference",repr(ref)[:800])
+          if isinstance(ref,dict):
+              ref=ref.get("value",ref)
+          if isinstance(ref,dict):
+              ref=ref.get("url") or ref.get("path")
+          assert isinstance(ref,str) and ref,type(ref)
           audio=c.predict(emo_control_method="Use emotion vectors",prompt=handle_file(ref),text="机会来了！头球！球进了！塔城队完成绝杀！",lang_choice="ZH",emo_ref_path=handle_file(ref),emo_weight=0.65,vec1=0.7,vec7=0.3,api_name="/gen_single")
-          shutil.copyfile(audio,"index-test.wav")
+          if isinstance(audio,dict):
+              audio=audio.get("value",audio)
+          if isinstance(audio,dict):
+              audio=audio.get("url") or audio.get("path")
+          assert isinstance(audio,str)
+          if audio.startswith("https://"):
+              import urllib.request
+              with urllib.request.urlopen(audio,timeout=30) as response, open("index-test.wav","wb") as out:
+                  shutil.copyfileobj(response,out)
+          else:
+              shutil.copyfile(audio,"index-test.wav")
           info=sf.info("index-test.wav")
           assert info.duration>1 and info.duration<60
           print(info)
