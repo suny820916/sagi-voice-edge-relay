@@ -38,6 +38,15 @@ jobs:
             await page.locator('#generate').click();
             await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('已自动切换：Edge TTS'));
             assert.equal(await page.locator('#save').isEnabled(),true);
+            // Regression: failed generation must not expose the preceding audio.
+            await page.unroute('https://sagi-voice-edge-relay.sg3544225.workers.dev/**');
+            await page.route('https://sagi-voice-edge-relay.sg3544225.workers.dev/**',r=>r.fulfill({status:503,headers:{'access-control-allow-origin':'*'}}));
+            await page.locator('#consent').uncheck();
+            await page.locator('#generate').click();
+            await page.waitForFunction(()=>!document.querySelector('#generate').disabled);
+            assert.equal(await page.locator('#save').isEnabled(),false);
+            assert.equal(await page.locator('#audio').isVisible(),false);
+            assert.equal(await page.locator('#text').inputValue(),'塔城队进球了！');
             await page.reload();
             assert.equal(await page.locator('#text').inputValue(),'塔城队进球了！');
             console.log('Browser mock fallback, decode, draft persistence passed');
