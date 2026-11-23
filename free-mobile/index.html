@@ -4,18 +4,18 @@
 import {generateFree} from './free-engine-router.mjs';
 import {makeProviders,validateBrowserAudio} from './free-provider-adapters.mjs';
 const $=id=>document.getElementById(id);let controller,blob,url;
-if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').then(reg=>{const show=()=>{if(reg.waiting){$('update').hidden=false;$('update').onclick=()=>{if(controller)return;reg.waiting?.postMessage('UPDATE')}}};show();reg.addEventListener('updatefound',()=>reg.installing?.addEventListener('statechange',show));let reloading=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!$('update').hidden&&!reloading&&!controller){reloading=true;location.reload()}});}).catch(()=>{})}
+if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').then(reg=>{const show=()=>{if(reg.waiting){$('update').hidden=false;$('update').disabled=!!controller;$('update').onclick=()=>{if(controller)return;reg.waiting?.postMessage('UPDATE')}}};show();reg.addEventListener('updatefound',()=>reg.installing?.addEventListener('statechange',show));let reloading=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!$('update').hidden&&!reloading&&!controller){reloading=true;location.reload()}});}).catch(()=>{})}
 try{$('text').value=localStorage.getItem('sagi-free-draft')||''}catch{}
 $('text').addEventListener('input',()=>{try{localStorage.setItem('sagi-free-draft',$('text').value)}catch{}});
 $('cancel').onclick=()=>controller?.abort();
 $('generate').onclick=async()=>{
  const text=$('text').value.trim();if(!text||text.length>240){$('status').textContent='请输入1至240字';return}
- controller=new AbortController();$('audio').pause();$('audio').removeAttribute('src');$('audio').load();$('audio').hidden=true;$('save').disabled=true;if(url)URL.revokeObjectURL(url);url=null;blob=null;$('generate').disabled=true;$('cancel').disabled=false;$('status').textContent='准备生成';
+ controller=new AbortController();$('update').disabled=true;$('audio').pause();$('audio').removeAttribute('src');$('audio').load();$('audio').hidden=true;$('save').disabled=true;if(url)URL.revokeObjectURL(url);url=null;blob=null;$('generate').disabled=true;$('cancel').disabled=false;$('status').textContent='准备生成';
  const target=Number($('target').value);const style=$('style').value;const instructions={goal:'职业足球直播解说，逐渐蓄力，进球瞬间爆发，随后自然收束。',pro:'职业足球解说，清晰自然，节奏富有变化。',warm:'温情足球纪录片，克制真诚，留有余韵。'};
  try{
  const result=await generateFree({text,style,instruction:instructions[style]+'准确朗读，不增字漏字。'},makeProviders(),{signal:controller.signal,allowPublicDemo:$('consent').checked,validateAudio:validateBrowserAudio,onStatus:engine=>$('status').textContent='正在尝试 '+engine});
- if(url)URL.revokeObjectURL(url);blob=result.audio;url=URL.createObjectURL(blob);$('audio').src=url;$('audio').hidden=false;$('save').disabled=false;$('status').textContent=(result.fallback?'已自动切换：':'生成完成：')+result.engine+' · '+(result.durationSeconds?.toFixed(2)??'未知')+'秒'+(target&&result.durationSeconds?'（目标 '+target+'秒，偏差 '+(result.durationSeconds-target).toFixed(2)+'秒）':'');$('audio').play().catch(()=>{});
- }catch(e){$('status').textContent=e.message+'。文案仍保留。'}finally{$('generate').disabled=false;$('cancel').disabled=true;controller=null}
+ if(url)URL.revokeObjectURL(url);blob=result.audio;url=URL.createObjectURL(blob);$('audio').src=url;$('audio').hidden=false;$('save').disabled=false;$('status').textContent=(result.fallback?'已自动切换：':'生成完成：')+result.engine+' · '+(result.durationSeconds?.toFixed(2)??'未知')+'秒'+(target&&result.durationSeconds?'（目标 '+target+'秒，偏差 '+(result.durationSeconds-target).toFixed(2)+'秒）':'');$('audio').play().catch(()=>{if(blob && !controller?.signal.aborted) $('status').textContent+=' · 请点击播放器播放（浏览器限制自动播放）';});
+ }catch(e){$('status').textContent=e.message+'。文案仍保留。'}finally{$('generate').disabled=false;$('cancel').disabled=true;controller=null;$('update').disabled=false}
 };
 $('save').onclick=async()=>{if(!blob)return;const mime=blob.type.split(';')[0].toLowerCase();const ext=({'audio/mpeg':'mp3','audio/mp3':'mp3','audio/wav':'wav','audio/x-wav':'wav','audio/ogg':'ogg','audio/webm':'webm','audio/mp4':'m4a','audio/aac':'aac','audio/flac':'flac'})[mime]||'bin';const file=new File([blob],'SAGI_VOICE.'+ext,{type:blob.type});if(navigator.canShare?.({files:[file]})){try{await navigator.share({files:[file]});return}catch(e){if(e.name==='AbortError')return}}const a=document.createElement('a');a.href=url;a.download=file.name;a.click()};
 </script></body></html>
