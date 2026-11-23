@@ -63,18 +63,28 @@ export function makeProviders(fetcher=fetch){
     }}
   ];
 }
-export async function validateBrowserAudio(blob){
+export async function validateBrowserAudio(blob, signal){
+  const checkCancelled=()=>{if(signal?.aborted)throw new Error("已取消音频验证");};
+  checkCancelled();
   const AC=globalThis.AudioContext||globalThis.webkitAudioContext;
   if(!AC)throw new Error("浏览器不支持音频验证");
   const ctx=new AC();
   try{
-    const audio=await ctx.decodeAudioData(await blob.arrayBuffer());
+    const bytes=await blob.arrayBuffer();
+    checkCancelled();
+    // decodeAudioData cannot be interrupted on every browser; discard its result after cancellation.
+    const audio=await ctx.decodeAudioData(bytes);
+    checkCancelled();
     if(!Number.isFinite(audio.duration)||audio.duration<0.2)throw new Error("音频时长异常");
     let peak=0;
     for(let c=0;c<audio.numberOfChannels;c++){
       const samples=audio.getChannelData(c);
-      for(let i=0;i<samples.length;i++)peak=Math.max(peak,Math.abs(samples[i]));
+      for(let i=0;i<samples.length;i++){
+        if((i&65535)===0)checkCancelled();
+        peak=Math.max(peak,Math.abs(samples[i]));
+      }
     }
+    checkCancelled();
     if(!Number.isFinite(peak)||peak<0.0001)throw new Error("音频静音或无效");
     return audio.duration;
   }finally{await ctx.close().catch(()=>{});}
