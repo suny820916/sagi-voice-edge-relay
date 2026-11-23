@@ -2,7 +2,11 @@ name: Free mobile Pages preview
 on:
   push:
     branches: [feature/free-engine-discovery]
-    paths: ['.github/workflows/free-pages-preview.yml']
+    paths:
+      - '.github/workflows/free-pages-preview.yml'
+      - 'free-mobile/**'
+      - 'free-engine-router.mjs'
+      - 'free-provider-adapters.mjs'
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,6 +28,10 @@ jobs:
           cp free-engine-router.mjs free-provider-adapters.mjs free-mobile/
           mkdir -p site/free
           cp -r free-mobile/. site/free/
+          test -s site/free/index.html
+          test -s site/free/free-engine-router.mjs
+          test -s site/free/free-provider-adapters.mjs
+          test -s site/free/sw.js
           printf '<!doctype html><meta charset="utf-8"><a href="./free/">SAGI VOICE FREE V1.6 测试版</a>' > site/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
