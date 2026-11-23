@@ -1,8 +1,11 @@
 name: Free TTS engine discovery
 on:
-  push:
-    branches: [feature/free-engine-discovery]
   workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sagi-free-live-discovery
+  cancel-in-progress: false
 jobs:
   probe:
     runs-on: ubuntu-latest
