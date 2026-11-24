@@ -55,6 +55,14 @@ jobs:
             assert.match(await page.locator('#status').textContent(),/已自动切换：Edge TTS/);
             assert.equal(await page.locator('#save').isEnabled(),true);
             // Regression: failed generation must not expose the preceding audio.
+            await page.locator('#mode').selectOption('ai_female');
+            assert.equal(await page.locator('#consent').isDisabled(),true);
+            const femaleRequest=page.waitForRequest(r=>r.method()==='POST'&&r.url().endsWith('/api/direct-tts'));
+            await page.locator('#generate').click();
+            assert.equal((await femaleRequest).postDataJSON().mode,'ai_female');
+            await page.waitForFunction(()=>!document.querySelector('#generate').disabled);
+            assert.equal(await page.locator('#save').isEnabled(),true);
+            await page.locator('#mode').selectOption('ai_male');
             await page.unroute('https://sagi-voice-edge-relay.sg3544225.workers.dev/**');
             await page.route('https://sagi-voice-edge-relay.sg3544225.workers.dev/**',r=>reply(r,503));
             await page.locator('#consent').uncheck();

@@ -58,7 +58,7 @@ export function makeProviders(fetcher=fetch){
       return {audio:await media.blob(),durationMode:"自然时长"};
     }},
     {id:"Edge TTS",allowed:true,timeoutMs:45000,generate:async(req,signal)=>{
-      const r=await checked(fetcher,EDGE+"/api/direct-tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:req.text,mode:"ai_male",style:req.style||"football_auto",commentary_mode:req.style==="football_auto",intensity:68,emotion_curve:"build",segment_index:0,segment_count:1,speed:1})},signal);
+      const r=await checked(fetcher,EDGE+"/api/direct-tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:req.text,mode:req.mode==="ai_female"?"ai_female":"ai_male",style:req.style||"football_auto",commentary_mode:(req.style||"football_auto")==="football_auto",intensity:68,emotion_curve:"build",segment_index:0,segment_count:1,speed:1})},signal);
       return {audio:await r.blob(),durationMode:"自然时长"};
     }}
   ];

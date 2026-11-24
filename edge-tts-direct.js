@@ -81,17 +81,18 @@ async function synthesizeOnce(text,voice,rate,pitch,volume,unixSeconds){
   throw last||new Error("EDGE_TTS_UNAVAILABLE")
 }
 
-const GOAL_WORDS=/绝杀|进球|破门|球进了|点球|帽子戏法|扳平|反超|冠军|夺冠|晋级|出线|淘汰|制胜|最后一击|最后一分钟|读秒|历史|奇迹|3[:：比-]\s*\d|\d\s*[:：比-]\s*\d/;
-const ATTACK_WORDS=/反击|冲刺|突破|传中|射门|头球|抢断|压迫|推进|转换|单刀|禁区|门前|攻势|机会|加速|逼抢/;
+const GOAL_WORDS=/绝杀|进球|破门|球进了|帽子戏法|扳平|反超|夺冠|制胜球/;
+const UNREALIZED_GOAL=/(?:差点|险些|错失|未能|没有|没能|能否|争取|如果|期待|需要)[^，,。！？!?；;]{0,12}(?:绝杀|进球|破门|扳平|反超|夺冠)|进球(?:被吹|无效)|[？?]$/;
+const ATTACK_WORDS=/反击|冲刺|突破|传球|启动|传中|射门|头球|抢断|压迫|推进|转换|单刀|禁区|门前|攻势|机会|加速|逼抢/;
 const WARM_WORDS=/热爱|坚持|梦想|孩子|陪伴|家乡|普通人|平凡|记住|记录|青春|岁月|故事/;
 
 function clamp(n,min,max){return Math.max(min,Math.min(max,n))}
 function choosePerformanceStyle(text,style,commentaryMode){
   const requested=String(style||"natural");
-  if(!commentaryMode || requested!=="football_auto")return requested;
+  if(requested!=="football_goal" && !(requested==="football_auto" && commentaryMode))return requested;
   const s=String(text||"");
-  if(GOAL_WORDS.test(s))return "football_goal";
-  if(ATTACK_WORDS.test(s))return "football_passion";
+  if(GOAL_WORDS.test(s) && !UNREALIZED_GOAL.test(s))return "football_goal";
+  if(ATTACK_WORDS.test(s) || UNREALIZED_GOAL.test(s))return "football_passion";
   if(WARM_WORDS.test(s))return "football_warm";
   return "football_pro"
 }
@@ -103,16 +104,23 @@ function curveBoost(curve,position){
   if(name==="documentary")return -0.10+0.38*Math.sin(Math.PI*p);
   return 0.18
 }
-function stylePlan(style,speed,{intensity=60,curve="steady",position=.5}={}){
+function stylePlan(style,speed,{intensity=60,curve="steady",position=.5,mode="ai_male",directed=false,recovering=false}={}){
   const s=String(style||"natural"),x=clamp(Number(speed)||1,.74,1.36);let bias=1,pitch=0,volume=0;
   if(s==="football_pro"){bias=.98;pitch=-1;volume=0}
-  else if(s==="football_passion"){bias=1.11;pitch=6;volume=8}
-  else if(s==="football_goal"){bias=1.19;pitch=10;volume=14}
+  else if(s==="football_passion"){bias=1.06;pitch=3;volume=4}
+  else if(s==="football_goal"){bias=1.16;pitch=8;volume=13}
   else if(s==="football_warm"){bias=.90;pitch=-4;volume=-4}
   else if(s==="football_emotional"){bias=.86;pitch=-6;volume=-5}
   else if(s==="football_memory"){bias=.89;pitch=-5;volume=-4}
   const intensity01=clamp(Number(intensity)||60,0,100)/100;
-  const boost=curveBoost(curve,position)*intensity01;
+  const isGoal=s==="football_goal";
+  const boost=recovering?0:curveBoost(curve,position)*intensity01*(directed && !isGoal ? .35 : 1);
+  if(recovering){bias=Math.min(bias,.99);pitch=Math.min(pitch,-1);volume=Math.min(volume,0)}
+  if(mode==="ai_female" && s!=="natural"){
+    bias*=.99;
+    pitch=Math.round(pitch*.72)-2;
+    volume=Math.round(volume*.82)-1;
+  }
   bias*=1+boost*.10;
   pitch+=Math.round(boost*7);
   volume+=Math.round(boost*7);
@@ -124,19 +132,10 @@ function stylePlan(style,speed,{intensity=60,curve="steady",position=.5}={}){
     volume:(vol>=0?"+":"")+vol+"%"
   }
 }
-function voiceFor(mode,style){
-  if(mode==="ai_female"){
-    if(style==="football_goal"||style==="football_passion")return "zh-CN-XiaoyiNeural";
-    return "zh-CN-XiaoxiaoNeural"
-  }
-  if(style==="football_goal"||style==="football_passion")return "zh-CN-YunjianNeural";
-  if(style==="football_warm"||style==="football_emotional")return "zh-CN-YunxiNeural";
-  if(style==="football_memory"||style==="football_pro")return "zh-CN-YunyangNeural";
-  return "zh-CN-YunjianNeural"
-}
-function splitText(text,max=1200){
+function splitText(text,directed,max=1200){
   const s=String(text||"").trim();if(!s)return[];
-  const rows=s.split(/(?<=[。！？!?；;\n])/).map(x=>x.trim()).filter(Boolean),out=[];let cur="";
+  const rows=s.split(/(?<=[。！？!?；;\n])/).map(x=>x.trim()).filter(Boolean),out=[];
+  if(directed)return rows.flatMap(row=>row.split(/(?<=[，,])(?=.{4,})/u));let cur="";
   for(const row of rows){if((cur+row).length>max&&cur){out.push(cur);cur=row}else cur+=row}if(cur)out.push(cur);return out
 }
 export async function synthesizeEdgeDirect({
@@ -150,28 +149,30 @@ export async function synthesizeEdgeDirect({
   segment_index=0,
   segment_count=1
 }){
-  const chunks=splitText(text);if(!chunks.length)throw new Error("TEXT_REQUIRED");if(String(text).length>6000)throw new Error("TEXT_TOO_LONG");
+  const directed=style==="football_goal" || (style==="football_auto" && Boolean(commentary_mode));
+  const chunks=splitText(text,directed);if(!chunks.length)throw new Error("TEXT_REQUIRED");if(String(text).length>6000)throw new Error("TEXT_TOO_LONG");
   const audio=[];
   const count=Math.max(1,Number(segment_count)||1),idx=clamp(Number(segment_index)||0,0,count-1);
   const basePosition=count<=1?.5:idx/(count-1);
-  let lastStyle="natural",lastPlan=null,lastVoice="";
+  let lastStyle="natural",lastPlan=null;
+  const voice=mode==="ai_female"?"zh-CN-XiaoxiaoNeural":"zh-CN-YunjianNeural";
   for(let i=0;i<chunks.length;i++){
     const chunk=chunks[i];
     const position=chunks.length<=1?basePosition:clamp((idx+(i/(Math.max(1,chunks.length-1))))/count,0,1);
     const resolvedStyle=choosePerformanceStyle(chunk,style,Boolean(commentary_mode));
-    const plan=stylePlan(resolvedStyle,speed,{intensity,curve:emotion_curve,position});
-    const voice=voiceFor(mode,resolvedStyle);
+    const recovering=directed && lastStyle==="football_goal" && resolvedStyle!=="football_goal";
+    const plan=stylePlan(resolvedStyle,speed,{intensity,curve:emotion_curve,position,mode,directed,recovering});
     let buf,err;
     for(let attempt=0;attempt<2;attempt++){
       try{buf=await synthesizeOnce(chunk,voice,plan.rate,plan.pitch,plan.volume,Date.now()/1000);break}catch(e){err=e;if(attempt===0)await new Promise(r=>setTimeout(r,250))}
     }
-    if(!buf)throw err||new Error("EDGE_TTS_FAILED");audio.push(buf);lastStyle=resolvedStyle;lastPlan=plan;lastVoice=voice
+    if(!buf)throw err||new Error("EDGE_TTS_FAILED");audio.push(buf);lastStyle=resolvedStyle;lastPlan=plan
   }
   const joined=Buffer.concat(audio);
   return{
     audio:joined,
-    voice:lastVoice,
-    model:"edge-neural-direct-v4-contrast",
+    voice,
+    model:"edge-neural-direct-v5-dual",
     provider:"Microsoft Edge Neural Direct",
     segments:chunks.length,
     performance_style:lastStyle,

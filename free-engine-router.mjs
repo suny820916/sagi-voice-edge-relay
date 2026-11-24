@@ -4,7 +4,7 @@ export async function generateFree(request, providers, options = {}) {
   const cancelled = () => new Error("已取消");
   for (const provider of providers) {
     if (options.signal?.aborted) throw cancelled();
-    if (!provider.allowed || (provider.publicDemo && !options.allowPublicDemo)) continue;
+    if (!provider.allowed || (provider.publicDemo && (!options.allowPublicDemo || request.mode==="ai_female"))) continue;
     const controller = new AbortController();
     const ms = Math.min(120000, Math.max(100, provider.timeoutMs || 45000));
     let timer, onAbort;
