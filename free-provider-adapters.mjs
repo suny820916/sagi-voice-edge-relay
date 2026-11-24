@@ -49,7 +49,7 @@ export function makeProviders(fetcher=fetch){
       const ref=ex[0]?.value??ex[0];
       if(!ref||typeof ref.path!=="string")throw new Error("示例音色不可用");
       const file={path:ref.path,meta:{_type:"gradio.FileData"}};
-      const vectors=req.style==="goal"?[0.7,0,0,0,0,0,0.3,0]:req.style==="warm"?[0.15,0,0.15,0,0,0.15,0,0.55]:[0.2,0,0,0,0,0,0,0.8];
+      const vectors=req.style==="football_goal"?[0.7,0,0,0,0,0,0.3,0]:req.style==="football_warm"?[0.15,0,0.15,0,0,0.15,0,0.55]:[0.2,0,0,0,0,0,0,0.8];
       const data=await gradioCall(fetcher,INDEX,"gen_single",["Use emotion vectors",file,req.text,"ZH",file,0.65,...vectors,"",false,120,1,true,0.8,30,0.8,0,3,10,1500],signal);
       const out=data[0]?.value??data[0];
       const url=new URL(out?.url||"",INDEX);
@@ -58,7 +58,7 @@ export function makeProviders(fetcher=fetch){
       return {audio:await media.blob(),durationMode:"自然时长"};
     }},
     {id:"Edge TTS",allowed:true,timeoutMs:45000,generate:async(req,signal)=>{
-      const r=await checked(fetcher,EDGE+"/api/direct-tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:req.text,mode:"ai_male",style:req.style||"natural",speed:1})},signal);
+      const r=await checked(fetcher,EDGE+"/api/direct-tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:req.text,mode:"ai_male",style:req.style||"football_auto",commentary_mode:req.style==="football_auto",intensity:68,emotion_curve:"build",segment_index:0,segment_count:1,speed:1})},signal);
       return {audio:await r.blob(),durationMode:"自然时长"};
     }}
   ];
