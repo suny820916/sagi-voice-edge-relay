@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {learnReference,mergeReference} from '../free-mobile/reference-style.mjs';
+import {learnReference,mergeReference,referenceDistance} from '../free-mobile/reference-style.mjs';
 import {makeProviders} from '../free-provider-adapters.mjs';
 
 test('learned reference accumulates and reaches Edge without the source recording', async () => {
@@ -24,4 +24,11 @@ test('learned reference accumulates and reaches Edge without the source recordin
     return new Response(new Uint8Array(256), {headers:{'Content-Type':'audio/mpeg'}});
   }).at(-1);
   await edge.generate({text:'球进了！',mode:'ai_female',profile});
+});
+
+test('automatic comparison prefers the closer acoustic profile', () => {
+  const target = {speed:1, intensity:70, pauseRatio:.15};
+  const learned = {speed:.99, intensity:72, pauseRatio:.17};
+  const baseline = {speed:.9, intensity:55, pauseRatio:.3};
+  assert.ok(referenceDistance(learned,target) < referenceDistance(baseline,target));
 });

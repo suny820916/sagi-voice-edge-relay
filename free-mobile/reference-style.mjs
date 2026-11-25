@@ -35,3 +35,9 @@ export function mergeReference(previous, sample) {
   const average = key => (count * (previous?.[key] ?? 0) + sample[key]) / (count + 1);
   return {count: count + 1, speed: average('speed'), intensity: average('intensity'), pauseRatio: average('pauseRatio')};
 }
+
+export function referenceDistance(sample, target) {
+  return Math.abs(sample.speed - target.speed) / .2
+    + Math.abs(sample.intensity - target.intensity) / 32
+    + Math.abs(sample.pauseRatio - target.pauseRatio);
+}
