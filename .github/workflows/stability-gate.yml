@@ -1,6 +1,7 @@
 name: SAGI VOICE Source Gate
 
 on:
+  workflow_call:
   push:
     branches: [beta, main]
   pull_request:

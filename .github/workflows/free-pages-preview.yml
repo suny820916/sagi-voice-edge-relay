@@ -2,47 +2,67 @@ name: Free mobile Pages preview
 on:
   push:
     branches: [feature/free-engine-discovery]
-    paths:
-      - '.github/workflows/free-pages-preview.yml'
-      - 'free-mobile/**'
-      - 'free-engine-router.mjs'
-      - 'free-provider-adapters.mjs'
   workflow_dispatch:
+
 permissions:
   contents: read
-  pages: write
-  id-token: write
+
 concurrency:
   group: sagi-free-pages-preview
-  cancel-in-progress: false
+  cancel-in-progress: true
+
 jobs:
+  source:
+    if: github.ref == 'refs/heads/feature/free-engine-discovery'
+    uses: ./.github/workflows/stability-gate.yml
+  router:
+    if: github.ref == 'refs/heads/feature/free-engine-discovery'
+    uses: ./.github/workflows/free-router-test.yml
+  browser:
+    if: github.ref == 'refs/heads/feature/free-engine-discovery'
+    uses: ./.github/workflows/free-mobile-test.yml
   package:
+    needs: [source, router, browser]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Configure free public Pages
-        uses: actions/configure-pages@v5
         with:
-          enablement: true
-      - run: |
-          cp free-engine-router.mjs free-provider-adapters.mjs free-mobile/
+          ref: ${{ github.sha }}
+      - name: Package the tested revision
+        run: |
           mkdir -p site/free
           cp -r free-mobile/. site/free/
-          test -s site/free/index.html
-          test -s site/free/free-engine-router.mjs
-          test -s site/free/free-provider-adapters.mjs
-          test -s site/free/sw.js
-          printf '<!doctype html><meta charset="utf-8"><a href="./free/">SAGI VOICE FREE V1.6 测试版</a>' > site/index.html
+          cp free-engine-router.mjs free-provider-adapters.mjs site/free/
+          for file in index.html free-engine-router.mjs free-provider-adapters.mjs reference-style.mjs sw.js; do
+            test -s "site/free/$file"
+          done
+          printf '<!doctype html><meta charset="utf-8"><a href="./free/">SAGI VOICE 免费手机测试版</a>' > site/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sagi-voice-mobile-preview-${{ github.sha }}
+          path: site/
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: site/
   deploy:
     needs: package
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy preview only
+      - name: Read the existing Pages configuration
+        uses: actions/configure-pages@v5
+      - name: Deploy the tested revision
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify the published mobile entry point
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors "${PAGE_URL%/}/free/" -o mobile.html
+          grep -q './reference-style.mjs' mobile.html

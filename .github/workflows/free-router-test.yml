@@ -1,5 +1,6 @@
 name: Free router tests
 on:
+  workflow_call:
   push:
     branches: [feature/free-engine-discovery]
 jobs:

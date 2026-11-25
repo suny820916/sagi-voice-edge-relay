@@ -1,5 +1,6 @@
 name: Free mobile UI
 on:
+  workflow_call:
   push:
     branches: [feature/free-engine-discovery]
   pull_request:
