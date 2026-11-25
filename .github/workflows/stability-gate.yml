@@ -42,7 +42,7 @@ jobs:
           JS
 
       - name: Verify dual-voice commentary
-        run: node --test tests/edge-commentary.test.mjs
+        run: node --test tests/edge-commentary.test.mjs tests/reference-style.test.mjs
 
       - name: Wrangler dry-run
         run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
