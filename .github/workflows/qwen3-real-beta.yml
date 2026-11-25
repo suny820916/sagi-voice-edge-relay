@@ -1,0 +1,184 @@
+name: SAGI VOICE V1.5 Real Qwen3 Beta
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [beta]
+    paths:
+      - "qwen3-service/**"
+      - "qwen3-tts-client.js"
+      - "worker.js"
+      - "wrangler.beta.toml"
+      - ".github/workflows/qwen3-real-beta.yml"
+
+concurrency:
+  group: sagi-voice-v15-real-qwen
+  cancel-in-progress: true
+
+jobs:
+  real-qwen-beta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      SAGI_TTS_TOKEN: ${{ secrets.SAGI_QWEN3_SERVICE_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Credential readiness
+        id: creds
+        shell: bash
+        run: |
+          set -euo pipefail
+          READY=1
+          for key in MODAL_TOKEN_ID MODAL_TOKEN_SECRET SAGI_TTS_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!key:-}" ]; then
+              echo "missing=$key"
+              READY=0
+            fi
+          done
+          echo "ready=$READY" >> "$GITHUB_OUTPUT"
+          if [ "$READY" = "1" ]; then
+            echo "All V1.5 real-GPU deployment credentials are present."
+          else
+            echo "Real-GPU deploy is prepared but credentials are not yet available in GitHub Actions secrets."
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.creds.outputs.ready == '1'
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        if: steps.creds.outputs.ready == '1'
+        with:
+          node-version: "22.12.0"
+
+      - name: Install Modal and Worker dependencies
+        if: steps.creds.outputs.ready == '1'
+        run: |
+          python -m pip install --upgrade pip
+          pip install "modal==1.6.4"
+          npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Build Qwen3 GPU image on Modal
+        if: steps.creds.outputs.ready == '1'
+        run: |
+          set -euo pipefail
+          modal image build             -t sagi-qwen3-tts:v1.5             -f qwen3-service/Dockerfile             .
+
+      - name: Deploy real Qwen3 1.7B GPU service
+        if: steps.creds.outputs.ready == '1'
+        run: |
+          set -euo pipefail
+          modal server deploy             --image sagi-qwen3-tts:v1.5             --port 8000             --app-name sagi-qwen3-tts             --gpu L4,A10G             --memory 16384,32768             --volume sagi-qwen3-models:/models             --secret-from-env SAGI_TTS_TOKEN             --unauthenticated             --target-concurrency 1             --max-concurrency 1             --min-containers 0             --max-containers 1             --scaledown-window 300             --startup-timeout 900             --yes
+          GPU_URL="$(python - <<'PY'
+          import modal
+          server = modal.Server.from_name("sagi-qwen3-tts", "Server")
+          print(server.get_url())
+          PY
+          )"
+          test -n "$GPU_URL"
+          echo "GPU_URL=$GPU_URL" >> "$GITHUB_ENV"
+          echo "Real Qwen3 service deployed."
+
+      - name: Real Qwen3 direct audio smoke test
+        if: steps.creds.outputs.ready == '1'
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 20 --retry-delay 5 "$GPU_URL/health" | tee /tmp/qwen-health.json
+          python - <<'PY'
+          import json
+          text = """比赛已经来到最后时刻，双方依然没有拉开差距。塔城队还在向前推进，右路拿球，传中送到禁区，机会来了！头球！球进了！就在最后一分钟，塔城队完成绝杀！这一刻，他们等得太久了，他们终于把自己的名字，写进了历史！"""
+          payload = {
+              "text": text,
+              "language": "Chinese",
+              "speaker": "Uncle_Fu",
+              "instruct": "中国职业足球现场直播解说。开场克制紧张，随着进攻逐步加速；机会来了明显抬升；头球短促有力；球进了瞬间爆发到最高点；绝杀保持高亢；最后写进历史逐渐降速压低，留下重量和余韵。必须准确朗读原文。",
+              "style": "football_goal",
+              "speed": 1.0,
+              "intensity": 85,
+              "segment_index": 0,
+              "segment_count": 1
+          }
+          open("/tmp/qwen-payload.json","w",encoding="utf-8").write(json.dumps(payload,ensure_ascii=False))
+          PY
+          STATUS="$(curl --silent --show-error --max-time 900             -H "Authorization: Bearer $SAGI_TTS_TOKEN"             -H "Content-Type: application/json"             -d @/tmp/qwen-payload.json             -D /tmp/qwen-direct.headers             -o qwen-real.wav             -w '%{http_code}'             "$GPU_URL/v1/tts")"
+          cat /tmp/qwen-direct.headers
+          test "$STATUS" = "200"
+          test "$(wc -c < qwen-real.wav)" -gt 5000
+          grep -qi '^Content-Type: audio/wav' /tmp/qwen-direct.headers
+          python - <<'PY'
+          import wave
+          with wave.open("qwen-real.wav","rb") as w:
+              assert w.getnchannels() == 1
+              assert w.getsampwidth() == 2
+              assert w.getnframes() > 1000
+              print("Qwen WAV", w.getframerate(), "Hz", round(w.getnframes()/w.getframerate(),2), "sec")
+          PY
+
+      - name: Deploy isolated Cloudflare Beta Worker
+        if: steps.creds.outputs.ready == '1'
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.beta.toml > /tmp/cf-bootstrap.log 2>&1
+          printf '%s' "$GPU_URL" | npx wrangler secret put QWEN3_TTS_URL --config wrangler.beta.toml
+          printf '%s' "$SAGI_TTS_TOKEN" | npx wrangler secret put QWEN3_TTS_TOKEN --config wrangler.beta.toml
+          npx wrangler deploy --config wrangler.beta.toml 2>&1 | tee /tmp/cf-final.log
+          BETA_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/cf-final.log | tail -1 || true)"
+          test -n "$BETA_URL"
+          echo "BETA_URL=$BETA_URL" >> "$GITHUB_ENV"
+          echo "Isolated Beta Worker deployed."
+
+      - name: Real phone-route Qwen3 E2E
+        if: steps.creds.outputs.ready == '1'
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "$BETA_URL/api/engine-status" | tee /tmp/engine-status.json
+          grep -q '"qwen_configured":true' /tmp/engine-status.json
+          python - <<'PY'
+          import json
+          text = """比赛已经来到最后时刻，双方依然没有拉开差距。塔城队还在向前推进，右路拿球，传中送到禁区，机会来了！头球！球进了！就在最后一分钟，塔城队完成绝杀！这一刻，他们等得太久了，他们终于把自己的名字，写进了历史！"""
+          payload = {
+              "text": text,
+              "mode": "ai_male",
+              "speed": 1.0,
+              "style": "football_auto",
+              "quality": "cinema",
+              "commentary_mode": True,
+              "intensity": 85,
+              "emotion_curve": "build",
+              "segment_index": 0,
+              "segment_count": 1
+          }
+          open("/tmp/sagi-beta-payload.json","w",encoding="utf-8").write(json.dumps(payload,ensure_ascii=False))
+          PY
+          STATUS="$(curl --silent --show-error --max-time 900             -H 'Content-Type: application/json'             -d @/tmp/sagi-beta-payload.json             -D /tmp/sagi-beta.headers             -o sagi-v15-real-beta.wav             -w '%{http_code}'             "$BETA_URL/api/voice-router")"
+          cat /tmp/sagi-beta.headers
+          test "$STATUS" = "200"
+          test "$(wc -c < sagi-v15-real-beta.wav)" -gt 5000
+          grep -qi '^X-SAGI-Voice-Route: qwen3-tts' /tmp/sagi-beta.headers
+          grep -qi '^X-SAGI-Voice-Provider: Qwen3-TTS' /tmp/sagi-beta.headers
+          grep -qi '^X-SAGI-Voice-Fallback: 0' /tmp/sagi-beta.headers
+          grep -qi '^Content-Type: audio/wav' /tmp/sagi-beta.headers
+          echo "REAL QWEN3 -> BETA WORKER -> WAV E2E PASS"
+
+      - name: Upload real Qwen3 acceptance audio
+        if: steps.creds.outputs.ready == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SAGI-VOICE-V1.5-REAL-QWEN3
+          path: |
+            qwen-real.wav
+            sagi-v15-real-beta.wav
+          retention-days: 7
+
+      - name: Prepared but blocked by missing credentials
+        if: steps.creds.outputs.ready != '1'
+        run: |
+          echo "V1.5 real-GPU deployment pipeline is ready."
+          echo "No Stable deployment was changed."

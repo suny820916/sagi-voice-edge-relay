@@ -1,6 +1,7 @@
 name: SAGI VOICE Source Gate
 
 on:
+  workflow_call:
   push:
     branches: [beta, main]
   pull_request:
@@ -40,6 +41,9 @@ jobs:
             console.log('GEC OK', t);
           }
           JS
+
+      - name: Verify dual-voice commentary
+        run: node --test tests/edge-commentary.test.mjs tests/reference-style.test.mjs
 
       - name: Wrangler dry-run
         run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run

@@ -1,0 +1,93 @@
+name: SAGI Qwen3 Exact Duration Gate
+
+on:
+  pull_request:
+    branches: [beta]
+    paths:
+      - "qwen3-service/**"
+      - "qwen3-tts-client.js"
+      - "worker.js"
+      - ".github/workflows/qwen3-duration-gate.yml"
+  push:
+    branches: [feature/v1.5-server-exact-duration]
+  workflow_dispatch:
+
+jobs:
+  duration-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python syntax and API contract
+        run: |
+          set -euo pipefail
+          python3 -m py_compile qwen3-service/app.py
+          grep -q 'target_duration: Optional\[float\]' qwen3-service/app.py
+          grep -q 'X-SAGI-Raw-Duration' qwen3-service/app.py
+          grep -q 'X-SAGI-Target-Duration' qwen3-service/app.py
+          grep -q 'X-SAGI-Final-Duration' qwen3-service/app.py
+          grep -q 'target_duration:Number(payload.target_duration' qwen3-tts-client.js
+          grep -q 'X-SAGI-Final-Duration' worker.js
+
+      - name: Test target tempo calculation
+        run: |
+          python3 - <<'PY'
+          import ast
+          from typing import Optional
+          src=open('qwen3-service/app.py',encoding='utf-8').read()
+          tree=ast.parse(src)
+          fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='tempo_for_target')
+          class HTTPException(Exception):
+              def __init__(self, status_code=None, detail=None):
+                  self.status_code=status_code
+                  self.detail=detail
+          ns={
+              'Optional':Optional,
+              'HTTPException':HTTPException,
+              'TARGET_TEMPO_MIN':0.70,
+              'TARGET_TEMPO_MAX':1.42,
+          }
+          exec(compile(ast.Module(body=[fn],type_ignores=[]),'tempo_for_target','exec'),ns)
+          f=ns['tempo_for_target']
+          got=f(23.36,20.0,1.0)
+          print('tempo',got)
+          assert abs(got-1.168)<1e-9
+          assert abs(f(10.0,None,1.08)-1.08)<1e-9
+          try:
+              f(40.0,10.0,1.0)
+          except HTTPException as e:
+              assert e.status_code==422
+              assert e.detail['code']=='target_duration_out_of_safe_range'
+              print('safe-range guard OK')
+          else:
+              raise AssertionError('unsafe tempo was not rejected')
+          PY
+
+      - name: Verify pitch-preserving 23.36s to 20s calibration
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          python3 - <<'PY'
+          import wave
+          sr=24000
+          dur=23.36
+          frames=round(sr*dur)
+          with wave.open('/tmp/raw.wav','wb') as w:
+              w.setnchannels(1);w.setsampwidth(2);w.setframerate(sr)
+              w.writeframes(b'\x00\x00'*frames)
+          print('raw_frames',frames)
+          PY
+          ffmpeg -hide_banner -loglevel error -i /tmp/raw.wav -filter:a atempo=1.168 -y /tmp/matched.wav
+          python3 - <<'PY'
+          import wave
+          with wave.open('/tmp/matched.wav','rb') as w:
+              dur=w.getnframes()/w.getframerate()
+              sr=w.getframerate()
+          print('matched_duration',dur,'sample_rate',sr)
+          assert sr==24000
+          assert 19.75 <= dur <= 20.25, dur
+          PY

@@ -28,12 +28,25 @@ jobs:
         with:
           node-version: "22.12.0"
 
+      - name: Read promotion target
+        run: |
+          set -euo pipefail
+          TARGET="$(awk -F= '$1=="target"{print $2}' release/promote-stable.request | tail -1 | tr -d '[:space:]')"
+          if ! echo "$TARGET" | grep -Eq '^R[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid promotion target: $TARGET"
+            exit 1
+          fi
+          TARGET_BRANCH="$(echo "$TARGET" | tr '[:upper:]' '[:lower:]')"
+          echo "TARGET=$TARGET" >> "$GITHUB_ENV"
+          echo "TARGET_BRANCH=$TARGET_BRANCH" >> "$GITHUB_ENV"
+          echo "Promotion target=$TARGET"
+
       - name: Sync latest Stable infrastructure into Beta
         run: |
           set -euo pipefail
           git config user.name "SAGI VOICE Release Bot"
           git config user.email "actions@users.noreply.github.com"
-          git fetch origin main beta stable-r3.2
+          git fetch origin main beta
           MAIN_BEFORE="$(git rev-parse origin/main)"
           echo "MAIN_BEFORE=$MAIN_BEFORE" >> "$GITHUB_ENV"
           git merge --no-edit origin/main
@@ -43,19 +56,19 @@ jobs:
       - name: Convert Beta marker to Stable candidate
         run: |
           python - <<'PY'
+          import os,re
           from pathlib import Path
           p=Path("worker.js")
           s=p.read_text(encoding="utf-8")
-          old="BETA 候选版 · Router 自检 · R3.3"
-          new="独立长期入口 · Stable Router · R3.3"
-          if old not in s:
+          target=os.environ["TARGET"]
+          if "BETA 候选版 · Router 自检" not in s:
               raise SystemExit("Beta marker not found")
-          s=s.replace(old,new)
-          s=s.replace('<span class=\\"badge\\">BETA</span>','<span class=\\"badge\\">V1.3</span>')
+          s=re.sub(r"BETA 候选版 · Router 自检 · [^<]+", f"独立长期入口 · Stable Router · {target}", s, count=1)
+          s=s.replace('<span class=\\"badge\\">BETA</span>','<span class=\\"badge\\">STABLE</span>')
           p.write_text(s,encoding="utf-8")
           PY
           git add worker.js
-          git commit -m "release: SAGI VOICE Stable Router R3.3"
+          git commit -m "release: SAGI VOICE Stable Router $TARGET"
           CANDIDATE="$(git rev-parse HEAD)"
           echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
           git push origin HEAD:beta
@@ -71,7 +84,7 @@ jobs:
           grep -q 'X-SAGI-Voice-Route' worker.js
           grep -q 'renderTokenCache' worker.js
           grep -q "fetch('/api/voice-router'" worker.js
-          grep -q '独立长期入口 · Stable Router · R3.3' worker.js
+          grep -q "独立长期入口 · Stable Router · $TARGET" worker.js
           ! grep -q 'BETA 候选版' worker.js
           ! grep -q 'sagisports.cn' worker.js
           node --input-type=module <<'JS'
@@ -93,7 +106,7 @@ jobs:
           echo $! > /tmp/sagi-candidate.pid
           READY=0
           for i in $(seq 1 45); do
-            if curl --silent --fail http://127.0.0.1:8787/ | grep -q '独立长期入口 · Stable Router · R3.3'; then
+            if curl --silent --fail http://127.0.0.1:8787/ | grep -q "独立长期入口 · Stable Router · $TARGET"; then
               READY=1
               break
             fi
@@ -183,9 +196,9 @@ jobs:
           READY=0
           for i in $(seq 1 72); do
             HTML="$(curl --silent --fail --max-time 20 "$BASE/" || true)"
-            if echo "$HTML" | grep -q '独立长期入口 · Stable Router · R3.3'; then
+            if echo "$HTML" | grep -q "独立长期入口 · Stable Router · $TARGET"; then
               READY=1
-              echo "Production R3.3 live on attempt $i"
+              echo "Production $TARGET live on attempt $i"
               break
             fi
             sleep 5
@@ -204,11 +217,11 @@ jobs:
           done
           echo "Production Router smoke OK."
 
-      - name: Certify R3.3 rollback branch
+      - name: Certify target rollback branch
         run: |
           set -euo pipefail
-          git push origin "$CANDIDATE:refs/heads/stable-r3.3" --force
-          echo "Certified stable-r3.3=$CANDIDATE"
+          git push origin "$CANDIDATE:refs/heads/stable-$TARGET_BRANCH" --force
+          echo "Certified stable-$TARGET_BRANCH=$CANDIDATE"
 
       - name: Automatic rollback on failed post-promotion verification
         if: failure()
@@ -234,6 +247,7 @@ jobs:
           {
             echo "# SAGI VOICE Promotion"
             echo ""
+            echo "- Target: `${TARGET:-unknown}`"
             echo "- Previous main: `${MAIN_BEFORE:-not-promoted}`"
             echo "- Candidate: `${CANDIDATE:-not-created}`"
             echo "- Promoted: `${PROMOTED:-0}`"

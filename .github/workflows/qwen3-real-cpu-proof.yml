@@ -1,0 +1,120 @@
+name: SAGI VOICE V1.5 Real Qwen3 CPU Proof
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [beta]
+    paths:
+      - ".github/workflows/qwen3-real-cpu-proof.yml"
+
+concurrency:
+  group: sagi-voice-v15-qwen3-real-cpu-proof
+  cancel-in-progress: true
+
+jobs:
+  real-qwen3-cpu-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install speech.cpp
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/nyosegawa/speech.cpp/main/install.sh | sh
+          export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+          command -v speech || {
+            echo "speech binary not found in expected PATH"
+            find "$HOME" -maxdepth 4 -type f -name speech -perm -111 -print
+            exit 1
+          }
+          speech --help >/tmp/speech-help.txt
+          head -n 40 /tmp/speech-help.txt
+
+      - name: Generate real Qwen3-TTS 1.7B football commentary
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+          cat > /tmp/sagi-text.txt <<'EOF'
+          比赛已经来到最后时刻，双方依然没有拉开差距。塔城队还在向前推进，右路拿球，传中送到禁区，机会来了！头球！球进了！就在最后一分钟，塔城队完成绝杀！这一刻，他们等得太久了，他们终于把自己的名字，写进了历史！
+          EOF
+
+          INSTRUCTIONS='中国职业足球现场直播解说员。开场保持克制和紧张感；随着塔城队推进逐渐加快。说到“机会来了”时明显抬升；“头球”必须短促有力；“球进了”瞬间爆发到全段最高点，速度、力度和兴奋感都明显增强，但不要失真尖叫；“完成绝杀”保持高亢；最后“他们终于把自己的名字，写进了历史”逐渐降速、压低声音，带重量和余韵。不要新闻播音腔，不要从头到尾一个强度。必须准确朗读原文，不增字、不漏字。'
+
+          TEXT="$(cat /tmp/sagi-text.txt)"
+          echo "Starting real Qwen3-TTS 1.7B CPU synthesis..."
+          speech tts qwen3-tts-1.7b             --voice uncle_fu             --language zh             --instructions "$INSTRUCTIONS"             -o SAGI_QWEN3_1.7B_TACHENG_TEST.wav             "$TEXT"
+
+          test -s SAGI_QWEN3_1.7B_TACHENG_TEST.wav
+          test "$(wc -c < SAGI_QWEN3_1.7B_TACHENG_TEST.wav)" -gt 5000
+
+      - name: Match Qwen3 audio to 20 seconds without changing pitch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          command -v ffmpeg
+          FACTOR="$(python3 - <<'PY'
+          import wave
+          p="SAGI_QWEN3_1.7B_TACHENG_TEST.wav"
+          with wave.open(p,"rb") as w:
+              duration=w.getnframes()/w.getframerate()
+          factor=max(0.7,min(1.42,duration/20.0))
+          print(f"{factor:.6f}")
+          PY
+          )"
+          echo "tempo_factor=$FACTOR"
+          ffmpeg -hide_banner -loglevel error -y             -i SAGI_QWEN3_1.7B_TACHENG_TEST.wav             -filter:a "atempo=$FACTOR"             SAGI_QWEN3_1.7B_TACHENG_20S.wav
+          test -s SAGI_QWEN3_1.7B_TACHENG_20S.wav
+
+      - name: Validate WAV
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import wave, os, json
+          def read_meta(p):
+              with wave.open(p,"rb") as w:
+                  return {
+                      "channels":w.getnchannels(),
+                      "sample_width":w.getsampwidth(),
+                      "sample_rate":w.getframerate(),
+                      "frames":w.getnframes(),
+                      "duration":round(w.getnframes()/w.getframerate(),3),
+                      "bytes":os.path.getsize(p),
+                  }
+          raw=read_meta("SAGI_QWEN3_1.7B_TACHENG_TEST.wav")
+          matched=read_meta("SAGI_QWEN3_1.7B_TACHENG_20S.wav")
+          meta={
+              "engine":"Qwen3-TTS-12Hz-1.7B-CustomVoice via speech.cpp",
+              "voice":"uncle_fu",
+              "language":"zh",
+              "raw":raw,
+              "matched_20s":matched,
+              "tempo_factor":round(raw["duration"]/20.0,4),
+              "tempo_method":"ffmpeg atempo pitch-preserving"
+          }
+          print(json.dumps(meta,ensure_ascii=False,indent=2))
+          assert raw["channels"] >= 1
+          assert raw["sample_width"] in (2,4)
+          assert raw["sample_rate"] >= 16000
+          assert raw["frames"] > 1000
+          assert 19.75 <= matched["duration"] <= 20.25, matched["duration"]
+          open("SAGI_QWEN3_1.7B_TACHENG_TEST.json","w",encoding="utf-8").write(json.dumps(meta,ensure_ascii=False,indent=2))
+          PY
+
+      - name: Upload real Qwen3 acceptance audio
+        uses: actions/upload-artifact@v4
+        with:
+          name: SAGI-QWEN3-1.7B-TACHENG-REAL
+          path: |
+            SAGI_QWEN3_1.7B_TACHENG_TEST.wav
+            SAGI_QWEN3_1.7B_TACHENG_20S.wav
+            SAGI_QWEN3_1.7B_TACHENG_TEST.json
+          retention-days: 7
+          if-no-files-found: error

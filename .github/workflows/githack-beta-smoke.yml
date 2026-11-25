@@ -1,0 +1,85 @@
+name: SAGI V1.5 GitHack Mobile Beta Smoke
+on:
+  push:
+    branches: [beta]
+    paths: ["beta-site/**",".github/workflows/githack-beta-smoke.yml"]
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Beta page JS and assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s beta-site/index.html
+          test -s beta-site/manifest.webmanifest
+          test -s beta-site/icon.svg
+          test -s beta-site/sw.js
+          python3 - <<'PY'
+          import re
+          s=open('beta-site/index.html',encoding='utf-8').read()
+          m=re.search(r'<script>(.*?)</script>',s,re.S)
+          assert m, 'script missing'
+          open('/tmp/app.js','w',encoding='utf-8').write(m.group(1))
+          PY
+          node --check /tmp/app.js
+      - name: Verify GitHack HTML delivery
+        shell: bash
+        run: |
+          set -euo pipefail
+          U="https://raw.githack.com/suny820916/sagi-voice-edge-relay/$GITHUB_SHA/beta-site/index.html"
+          CODE="$(curl -L --silent --show-error --max-time 30 -D /tmp/page.h -o /tmp/page -w '%{http_code}' "$U")"
+          test "$CODE" = "200"
+          grep -qi '^content-type: text/html' /tmp/page.h
+          grep -q 'Qwen3-TTS 1.7B Official ZeroGPU' /tmp/page
+          echo "BETA_URL=$U"
+      - name: Verify Qwen CORS from GitHack origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://qwen-qwen3-tts.hf.space"
+          for ORIGIN in "https://raw.githack.com" "https://rawcdn.githack.com"; do
+            curl --silent --show-error --max-time 30 -X OPTIONS               -H "Origin: $ORIGIN"               -H 'Access-Control-Request-Method: POST'               -H 'Access-Control-Request-Headers: content-type'               -D /tmp/cors.h -o /tmp/cors.b               "$BASE/gradio_api/call/generate_custom_voice"
+            echo "origin=$ORIGIN"
+            cat /tmp/cors.h | grep -Ei '^(access-control-allow-origin|access-control-allow-methods|access-control-allow-headers):'
+            grep -Fqi "access-control-allow-origin: $ORIGIN" /tmp/cors.h
+          done
+      - name: Real Qwen3 segmented long-text calls using GitHack origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://qwen-qwen3-tts.hf.space"
+          ORIGIN="https://raw.githack.com"
+          python3 - <<'PY'
+          import json
+          parts=[
+            "比赛已经来到最后时刻，双方依然没有拉开差距。",
+            "塔城队还在向前推进，右路拿球，传中送到禁区，机会来了！头球！球进了！",
+            "就在最后一分钟，塔城队完成绝杀！这一刻，他们等得太久了，他们终于把自己的名字，写进了历史！"
+          ]
+          for i,p in enumerate(parts):
+              json.dump({"data":[p,"Chinese","Uncle_fu","中国职业足球现场直播解说员。保持真实现场感；关键动作短促有力；高潮明显爆发；必须准确朗读原文。","1.7B"]},open(f"/tmp/p{i}.json","w"),ensure_ascii=False)
+          PY
+          for I in 0 1 2; do
+            OK=0
+            for TRY in 1 2 3 4; do
+              echo "segment=$I try=$TRY"
+              if curl --fail --silent --show-error --max-time 60                 -H 'Content-Type: application/json' -H "Origin: $ORIGIN"                 -X POST --data @/tmp/p$I.json                 "$BASE/gradio_api/call/generate_custom_voice" > /tmp/call.json; then
+                ID="$(python3 -c "import json;print(json.load(open('/tmp/call.json')).get('event_id',''))")"
+                if [ -n "$ID" ]; then
+                  curl --fail --silent --show-error --max-time 180                     -H 'Accept: text/event-stream' -H "Origin: $ORIGIN"                     "$BASE/gradio_api/call/generate_custom_voice/$ID" > /tmp/result.sse || true
+                  if grep -q 'Generation completed successfully' /tmp/result.sse && grep -q 'audio.wav' /tmp/result.sse; then
+                    OK=1
+                    break
+                  fi
+                fi
+              fi
+              sleep $((TRY*3))
+            done
+            test "$OK" = "1"
+          done
+          echo "REAL_QWEN3_SEGMENTED_LONG_TEXT=PASS"
+
