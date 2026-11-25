@@ -86,7 +86,22 @@ jobs:
             assert.equal(await page.locator('#text').inputValue(),'塔城队进球了！');
             await page.reload();
             assert.equal(await page.locator('#text').inputValue(),'塔城队进球了！');
-            console.log('Browser mock fallback, decode, draft persistence passed');
+            await page.locator('#useLearned').uncheck();
+            await page.unroute('https://sagi-voice-edge-relay.sg3544225.workers.dev/**');
+            await page.route('https://sagi-voice-edge-relay.sg3544225.workers.dev/**',r=>reply(r,200,{contentType:'audio/wav',body:wav}));
+            const longText='足球解说稿'.repeat(120);
+            await page.locator('#text').fill(longText);
+            const longRequest=page.waitForRequest(r=>r.method()==='POST'&&r.url().endsWith('/api/direct-tts'));
+            await page.locator('#generate').click();
+            assert.equal((await longRequest).postDataJSON().text,longText);
+            await page.waitForFunction(()=>!document.querySelector('#generate').disabled);
+            assert.equal(await page.locator('#save').isEnabled(),true);
+            const tooLong=longText+'球';
+            await page.locator('#text').fill(tooLong);
+            await page.locator('#generate').click();
+            assert.match(await page.locator('#status').textContent(),/600/);
+            assert.equal(await page.locator('#text').inputValue(),tooLong);
+            console.log('Browser mock fallback, decode, draft persistence and long input passed');
           }finally{await browser.close()}
           JS
       - uses: actions/upload-artifact@v4

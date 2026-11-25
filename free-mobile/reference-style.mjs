@@ -1,9 +1,9 @@
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 
-export function learnReference(samples, sampleRate, transcript) {
+export function learnReference(samples, sampleRate, transcript, maxSeconds = 60) {
   const chars = (transcript.match(/[\p{L}\p{N}]/gu) || []).length;
   const seconds = samples.length / sampleRate;
-  if (chars < 5 || seconds < 2 || seconds > 60) throw new Error('请使用 2–60 秒录音，并填写至少 5 字的对应原文');
+  if (chars < 5 || seconds < 2 || seconds > maxSeconds) throw new Error('请使用 2–'+maxSeconds+' 秒录音，并填写至少 5 字的对应原文');
   const step = Math.round(sampleRate / 50);
   const levels = [];
   for (let start = 0; start + step <= samples.length; start += step) {
