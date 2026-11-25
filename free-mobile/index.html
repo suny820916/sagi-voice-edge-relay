@@ -1,60 +1,41 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101310"><title>SAGI VOICE FREE V1.6</title><style>
 *{box-sizing:border-box}body{background:#101310;color:#fff;font:16px system-ui,sans-serif;margin:0;padding:calc(22px + env(safe-area-inset-top)) 18px calc(22px + env(safe-area-inset-bottom))}main{max-width:580px;margin:auto}h1{font-size:25px}i{color:#ef3939}p,small{color:#b4b8ae}textarea,select,button{font:inherit;border-radius:12px;padding:13px;border:1px solid #575c50;background:#1b201a;color:#fff}textarea,select,audio{width:100%}textarea{min-height:190px;resize:vertical}button{min-height:48px;margin:8px 4px 8px 0}button.primary{background:#e4ca87;color:#121611;font-weight:700}button:disabled{opacity:.45}label{display:block;margin:12px 0}#status{min-height:48px;overflow-wrap:anywhere}a{color:#e4ca87}audio{margin-top:12px}
-</style><link rel="manifest" href="./manifest.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><link rel="apple-touch-icon" href="./icon.svg"></head><body><main><h1>SAGI VOICE<i>●</i></h1><p>FREE V1.6 · 独立测试版</p><textarea id="text" maxlength="240" placeholder="输入足球解说文案"></textarea><small>每次最多240字，不自动截断。</small><label>解说声线<select id="mode"><option value="ai_male">男声 · 沉稳浑厚</option><option value="ai_female">女声 · 成熟温暖</option></select></label><details id="learning"><summary>从参考解说学习</summary><label>参考录音（2–60 秒）<input id="reference" type="file" accept="audio/*"></label><label>录音原文<textarea id="referenceText" placeholder="粘贴与录音对应的解说原文"></textarea></label><button id="learn">分析并学习当前声线</button><p id="learningStatus" role="status"></p><label><input id="useLearned" type="checkbox"> 使用学习参数生成（智能足球模式）</label><label><input id="autoCompare" type="checkbox"> 自动试配原版与学习版（生成两次）</label></details><label>解说风格<select id="style"><option value="football_auto" selected>智能足球情绪导演（自然蓄力）</option><option value="football_pro">沉稳专业</option><option value="football_goal">关键时刻高燃</option><option value="football_warm">温情纪录片</option></select></label><label><input type="checkbox" id="consent"> 男声可选：允许将文案发送给 Qwen 和 IndexTTS 公开试玩服务（可能排队或不可用），否则使用 Edge。</label><label>目标时长（仅用于对比，暂不改变音频）<select id="target"><option value="0">自然时长</option><option value="10">10秒</option><option value="15">15秒</option><option value="20">20秒</option><option value="30">30秒</option><option value="45">45秒</option><option value="60">60秒</option></select></label><button class="primary" id="generate">生成配音</button><button id="cancel" disabled>取消</button><p id="status" role="status" aria-live="polite">等待生成</p><audio id="audio" controls playsinline hidden></audio><button id="save" disabled>保存音频</button><p><small>本版使用自然时长。公开服务不保证可用，勿输入敏感数据。Edge 仅在授权来源可用。</small></p><button id="update" hidden>更新版本</button></main><script type="module">
-import {learnReference,mergeReference,referenceDistance} from './reference-style.mjs';
+</style><link rel="manifest" href="./manifest.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><link rel="apple-touch-icon" href="./icon.svg"></head><body><main><h1>SAGI VOICE<i>●</i></h1><p>FREE V1.6 · 独立测试版</p><textarea id="text" maxlength="240" placeholder="输入足球解说文案"></textarea><small>每次最多240字，不自动截断。</small><label>解说声线<select id="mode"><option value="ai_male">男声 · 沉稳浑厚</option><option value="ai_female">女声 · 成熟温暖</option></select></label><section id="learning"><label><input id="useLearned" type="checkbox" checked> 自动学习（智能足球模式）</label><small id="learningStatus" role="status"></small></section><label>解说风格<select id="style"><option value="football_auto" selected>智能足球情绪导演（自然蓄力）</option><option value="football_pro">沉稳专业</option><option value="football_goal">关键时刻高燃</option><option value="football_warm">温情纪录片</option></select></label><label><input type="checkbox" id="consent"> 男声可选：允许将文案发送给 Qwen 和 IndexTTS 公开试玩服务（可能排队或不可用），否则使用 Edge。</label><label>目标时长（仅用于对比，暂不改变音频）<select id="target"><option value="0">自然时长</option><option value="10">10秒</option><option value="15">15秒</option><option value="20">20秒</option><option value="30">30秒</option><option value="45">45秒</option><option value="60">60秒</option></select></label><button class="primary" id="generate">生成配音</button><button id="cancel" disabled>取消</button><p id="status" role="status" aria-live="polite">等待生成</p><audio id="audio" controls playsinline hidden></audio><button id="save" disabled>保存音频</button><p><small>本版使用自然时长。公开服务不保证可用，勿输入敏感数据。Edge 仅在授权来源可用。</small></p><button id="update" hidden>更新版本</button></main><script type="module">
+import {learnReference,referenceDistance,builtInReference,adaptiveReference,recordReferenceResult} from './reference-style.mjs';
 import {generateFree} from './free-engine-router.mjs';
 import {makeProviders,validateBrowserAudio} from './free-provider-adapters.mjs';
 const $=id=>document.getElementById(id);let controller,blob,url;
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').then(reg=>{const show=()=>{if(reg.waiting){$('update').hidden=false;$('update').disabled=!!controller;$('update').onclick=()=>{if(controller)return;reg.waiting?.postMessage('UPDATE')}}};show();reg.addEventListener('updatefound',()=>reg.installing?.addEventListener('statechange',show));let reloading=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!$('update').hidden&&!reloading&&!controller){reloading=true;location.reload()}});}).catch(()=>{})}
 try{$('text').value=localStorage.getItem('sagi-free-draft')||''}catch{}
 $('text').addEventListener('input',()=>{try{localStorage.setItem('sagi-free-draft',$('text').value)}catch{}});
-const profiles = {};
 const profileKey = mode => 'sagi-reference-style-v1-' + mode;
-for (const mode of ['ai_male','ai_female']) {
- try {
-  const saved = JSON.parse(localStorage.getItem(profileKey(mode)));
-  if (saved && saved.count > 0 && ['count','speed','intensity','pauseRatio'].every(key=>Number.isFinite(saved[key]))) profiles[mode] = saved;
- } catch {}
+const historyKey = mode => 'sagi-auto-learning-v1-' + mode;
+function readLocal(key){
+ try{return JSON.parse(localStorage.getItem(key))}catch{return null}
 }
-function showProfile(){
- const profile=profiles[$('mode').value];
- $('useLearned').disabled=!profile;
- $('autoCompare').disabled=!profile;
- $('useLearned').checked=Boolean(profile);
- $('learningStatus').textContent=profile ? '已学习 '+profile.count+' 段 · 停顿约 '+Math.round(profile.pauseRatio*100)+'% · 取消勾选可生成原版对比' : '当前声线还没有参考风格';
+function referenceFor(mode){
+ const saved=readLocal(profileKey(mode));
+ return saved && saved.count>0 && ['speed','intensity','pauseRatio'].every(key=>Number.isFinite(saved[key])) ? saved : builtInReference;
 }
-$('mode').onchange=()=>{
- $('consent').disabled=$('mode').value==='ai_female';
- showProfile();
-};
-$('learn').onclick=async()=>{
- const file=$('reference').files[0], mode=$('mode').value, transcript=$('referenceText').value;
- if(!file || file.size>20*1024*1024){$('learningStatus').textContent='请选择 20 MB 以内的参考音频';return}
- $('learn').disabled=true;
- let ctx;
- try{
-  const AC=window.AudioContext||window.webkitAudioContext;
-  ctx=new AC();
-  const decoded=await ctx.decodeAudioData(await file.arrayBuffer());
-  const sample=learnReference(decoded.getChannelData(0),decoded.sampleRate,transcript);
-  const profile=mergeReference(profiles[mode],sample);
-  localStorage.setItem(profileKey(mode),JSON.stringify(profile));
-  profiles[mode]=profile;
-  showProfile();
- }catch(e){$('learningStatus').textContent=e.message||'录音分析失败'}
- finally{if(ctx)await ctx.close().catch(()=>{});$('learn').disabled=false}
-};
+function updateLearning(){
+ const available=$('style').value==='football_auto';
+ $('useLearned').disabled=!available;
+ const active=available&&$('useLearned').checked;
+ $('consent').disabled=active||$('mode').value==='ai_female';
+ $('learningStatus').textContent=active?'已开启 · 自动比较两版，按声线记住结果':'关闭 · 使用原版参数';
+}
+$('mode').onchange=$('style').onchange=$('useLearned').onchange=updateLearning;
 $('mode').onchange();
 $('cancel').onclick=()=>controller?.abort();
 $('generate').onclick=async()=>{
  const text=$('text').value.trim();if(!text||text.length>240){$('status').textContent='请输入1至240字';return}
  controller=new AbortController();$('update').disabled=true;$('audio').pause();$('audio').removeAttribute('src');$('audio').load();$('audio').hidden=true;$('save').disabled=true;if(url)URL.revokeObjectURL(url);url=null;blob=null;$('generate').disabled=true;$('cancel').disabled=false;$('status').textContent='准备生成';
- const mode=$('mode').value;const profile=$('useLearned').checked && $('style').value==='football_auto' ? profiles[mode] : undefined;const target=Number($('target').value);const style=$('style').value;const instructions={football_auto:'成熟、浑厚、有磁性的男性体育解说。真实自然，平时克制清晰；进球、绝杀、反超等关键瞬间才明显爆发，之后自然收束。',football_pro:'成熟浑厚的男性职业足球解说，沉稳、清晰、自然，不夸张。',football_goal:'成熟浑厚的男性足球解说，前段自然蓄力，关键进球瞬间爆发，随后收束。',football_warm:'成熟浑厚的男性纪录片旁白，温暖、克制、真诚，留有余韵。'};
+ const mode=$('mode').value;const reference=$('useLearned').checked && $('style').value==='football_auto' ? referenceFor(mode) : undefined;const history=readLocal(historyKey(mode));const profile=reference ? adaptiveReference(reference,history) : undefined;const target=Number($('target').value);const style=$('style').value;const instructions={football_auto:'成熟、浑厚、有磁性的男性体育解说。真实自然，平时克制清晰；进球、绝杀、反超等关键瞬间才明显爆发，之后自然收束。',football_pro:'成熟浑厚的男性职业足球解说，沉稳、清晰、自然，不夸张。',football_goal:'成熟浑厚的男性足球解说，前段自然蓄力，关键进球瞬间爆发，随后收束。',football_warm:'成熟浑厚的男性纪录片旁白，温暖、克制、真诚，留有余韵。'};
  try{
  const request={text,style,mode,profile,instruction:instructions[style]+'准确朗读，不增字漏字。'};
  const options={signal:controller.signal,allowPublicDemo:!profile&&mode==='ai_male'&&$('consent').checked,validateAudio:validateBrowserAudio,onStatus:engine=>$('status').textContent='正在尝试 '+engine};
  const providers=makeProviders();
- const compare=profile&&$('autoCompare').checked;
+ const compare=Boolean(profile);
  let result=await generateFree(request,providers,options);
  let comparison='';
  if(compare){
@@ -65,11 +46,14 @@ $('generate').onclick=async()=>{
    ctx=new AC();
    const score=async candidate=>{
     const decoded=await ctx.decodeAudioData(await candidate.audio.arrayBuffer());
-    return referenceDistance(learnReference(decoded.getChannelData(0),decoded.sampleRate,text),profile);
+    return referenceDistance(learnReference(decoded.getChannelData(0),decoded.sampleRate,text),reference);
    };
    const [baseScore,learnedScore]=await Promise.all([score(baseline),score(result)]);
-   if(baseScore<=learnedScore){result=baseline;comparison=' · 自动匹配：原版'}
-   else comparison=' · 自动匹配：学习版';
+   if(controller.signal.aborted)throw new Error('已取消');
+   const learnedWon=learnedScore<baseScore;
+   try{localStorage.setItem(historyKey(mode),JSON.stringify(recordReferenceResult(history,learnedWon)))}catch{}
+   if(!learnedWon){result=baseline;comparison=' · 自学匹配：原版'}
+   else comparison=' · 自学匹配：学习版';
   }catch(e){
    if(controller.signal.aborted)throw e;
    comparison=' · 本次无法完成自动比较';

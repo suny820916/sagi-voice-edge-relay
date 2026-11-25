@@ -1,4 +1,4 @@
-const CACHE="sagi-free-v16-4";
+const CACHE="sagi-free-v16-5";
 const ASSETS=["./","./index.html","./reference-style.mjs","./free-engine-router.mjs","./free-provider-adapters.mjs","./manifest.webmanifest","./icon.svg"];
 self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS.map(path=>new Request(new URL(path,self.registration.scope),{cache:"reload"}))))));
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith("sagi-free-")&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));

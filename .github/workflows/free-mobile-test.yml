@@ -50,6 +50,9 @@ jobs:
             await page.route('https://sagi-voice-edge-relay.sg3544225.workers.dev/**',r=>reply(r,200,{contentType:'audio/wav',body:wav}));
             await page.goto('http://127.0.0.1:8765/');
             await page.locator('#text').fill('塔城队进球了！');
+            assert.equal(await page.locator('#useLearned').isChecked(),true);
+            assert.equal(await page.locator('#consent').isDisabled(),true);
+            await page.locator('#useLearned').uncheck();
             await page.locator('#consent').check();
             await page.locator('#generate').click();
             await page.waitForFunction(()=>!document.querySelector('#generate').disabled);

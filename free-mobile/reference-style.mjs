@@ -39,5 +39,21 @@ export function mergeReference(previous, sample) {
 export function referenceDistance(sample, target) {
   return Math.abs(sample.speed - target.speed) / .2
     + Math.abs(sample.intensity - target.intensity) / 32
-    + Math.abs(sample.pauseRatio - target.pauseRatio);
+    + (Number.isFinite(target.pauseRatio) ? Math.abs(sample.pauseRatio - target.pauseRatio) : 0);
+}
+
+export const builtInReference = Object.freeze({speed:.9,intensity:59,pauseRatio:null});
+
+export function recordReferenceResult(history, learnedWon) {
+  const wins = clamp(Number(history?.wins) || 0, 0, 19);
+  const losses = clamp(Number(history?.losses) || 0, 0, 19);
+  const decay = wins + losses >= 19 ? .95 : 1;
+  return {wins: wins * decay + Number(learnedWon), losses: losses * decay + Number(!learnedWon)};
+}
+
+export function adaptiveReference(reference, history) {
+  const wins = clamp(Number(history?.wins) || 0, 0, 19);
+  const losses = clamp(Number(history?.losses) || 0, 0, 19);
+  const weight = .35 + .65 * (wins + 2) / (wins + losses + 2);
+  return {speed: 1 + (reference.speed - 1) * weight, intensity: Math.round(68 + (reference.intensity - 68) * weight)};
 }

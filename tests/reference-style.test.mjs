@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {learnReference,mergeReference,referenceDistance} from '../free-mobile/reference-style.mjs';
+import {learnReference,mergeReference,referenceDistance,builtInReference,adaptiveReference,recordReferenceResult} from '../free-mobile/reference-style.mjs';
 import {makeProviders} from '../free-provider-adapters.mjs';
 
 test('learned reference accumulates and reaches Edge without the source recording', async () => {
@@ -31,4 +31,13 @@ test('automatic comparison prefers the closer acoustic profile', () => {
   const learned = {speed:.99, intensity:72, pauseRatio:.17};
   const baseline = {speed:.9, intensity:55, pauseRatio:.3};
   assert.ok(referenceDistance(learned,target) < referenceDistance(baseline,target));
+});
+
+test('built-in reference works without import and comparisons adjust future settings', () => {
+  const baseline = adaptiveReference(builtInReference,null);
+  assert.deepEqual(baseline,{speed:.9,intensity:59});
+  const afterLoss = adaptiveReference(builtInReference,recordReferenceResult(null,false));
+  const afterWin = adaptiveReference(builtInReference,recordReferenceResult(null,true));
+  assert.ok(afterLoss.speed>afterWin.speed);
+  assert.equal(referenceDistance({...builtInReference,pauseRatio:.8},builtInReference),0);
 });
