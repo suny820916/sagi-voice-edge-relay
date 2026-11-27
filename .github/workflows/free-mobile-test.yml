@@ -67,6 +67,15 @@ jobs:
             assert.equal(directedRequests[3].style,'football_goal');
             assert.ok(directedRequests[3].intensity>directedRequests[4].intensity);
             assert.equal(await page.locator('#save').isEnabled(),true);
+            await page.locator('#ab').check();
+            await page.locator('#text').fill('开场两分钟。球进了！');
+            await page.locator('#generate').click();
+            await page.waitForFunction(()=>!document.querySelector('#generate').disabled);
+            await page.locator('#playB').click();
+            assert.equal(await page.evaluate(()=>localStorage.getItem('sagi-director-preference-ai_male')),null);
+            await page.locator('#preferB').click();
+            assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('sagi-director-preference-ai_male'))),'B');
+            await page.locator('#ab').uncheck();
             await page.locator('#director').uncheck();
             await page.locator('#text').fill('塔城队进球了！');
             const autoRequests=[];
