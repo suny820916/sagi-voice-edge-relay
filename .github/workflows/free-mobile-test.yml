@@ -2,7 +2,7 @@ name: Free mobile UI
 on:
   workflow_call:
   push:
-    branches: [feature/free-engine-discovery]
+    branches: [feature/free-engine-discovery, feature/voice-v1.7-director]
   pull_request:
     branches: [main]
     paths: ['free-mobile/**', 'free-engine-router.mjs', 'free-provider-adapters.mjs', '.github/workflows/free-mobile-test.yml']
@@ -25,6 +25,7 @@ jobs:
         with:
           node-version: 22
       - run: |
+          node --test tests/football-director.test.mjs
           cp free-engine-router.mjs free-provider-adapters.mjs free-mobile/
           npm install --no-save playwright
           npx playwright install --with-deps "$TEST_ENGINE"
@@ -52,6 +53,22 @@ jobs:
             await page.locator('#text').fill('塔城队进球了！');
             assert.equal(await page.locator('#useLearned').isChecked(),true);
             assert.equal(await page.locator('#consent').isDisabled(),true);
+            await page.locator('summary').click();
+            const directedRequests=[];
+            page.on('request',r=>{
+              if(r.method()==='POST'&&r.url().endsWith('/api/direct-tts'))directedRequests.push(r.postDataJSON());
+            });
+            const directedText='开场两分钟。赵松源前场抢断。左脚低射。球进了！这是属于中国队的世界杯进球。';
+            await page.locator('#text').fill(directedText);
+            await page.locator('#generate').click();
+            await page.waitForFunction(()=>!document.querySelector('#generate').disabled);
+            assert.equal(directedRequests.length,5);
+            assert.equal(directedRequests.map(r=>r.text).join(''),directedText);
+            assert.equal(directedRequests[3].style,'football_goal');
+            assert.ok(directedRequests[3].intensity>directedRequests[4].intensity);
+            assert.equal(await page.locator('#save').isEnabled(),true);
+            await page.locator('#director').uncheck();
+            await page.locator('#text').fill('塔城队进球了！');
             const autoRequests=[];
             page.on('request',r=>{
               if(r.method()==='POST'&&r.url().endsWith('/api/direct-tts'))autoRequests.push(r.postDataJSON());
@@ -85,6 +102,8 @@ jobs:
             assert.equal(await page.locator('#audio').isVisible(),false);
             assert.equal(await page.locator('#text').inputValue(),'塔城队进球了！');
             await page.reload();
+            await page.locator('summary').click();
+            await page.locator('#director').uncheck();
             assert.equal(await page.locator('#text').inputValue(),'塔城队进球了！');
             await page.locator('#useLearned').uncheck();
             await page.unroute('https://sagi-voice-edge-relay.sg3544225.workers.dev/**');
