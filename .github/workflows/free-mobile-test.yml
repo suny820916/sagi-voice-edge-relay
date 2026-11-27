@@ -36,6 +36,7 @@ jobs:
           const browser=await ({chromium,webkit}[process.env.TEST_ENGINE]).launch({headless:true});
           try{
             const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,serviceWorkers:'block'});
+            await page.addInitScript(()=>Object.defineProperty(navigator,'canShare',{value:()=>false}));
             const wav=Buffer.alloc(44+48000*2);
             wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);
             wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);
@@ -67,6 +68,9 @@ jobs:
             assert.equal(directedRequests[3].style,'football_goal');
             assert.ok(directedRequests[3].intensity>directedRequests[4].intensity);
             assert.equal(await page.locator('#save').isEnabled(),true);
+            const download=page.waitForEvent('download');
+            await page.locator('#save').click();
+            assert.equal((await download).suggestedFilename(),'SAGI_VOICE.wav');
             await page.locator('#ab').check();
             await page.locator('#text').fill('开场两分钟。球进了！');
             await page.locator('#generate').click();
@@ -129,6 +133,20 @@ jobs:
             await page.locator('#generate').click();
             assert.match(await page.locator('#status').textContent(),/600/);
             assert.equal(await page.locator('#text').inputValue(),tooLong);
+            await page.locator('#text').fill('开场两分钟。球进了！');
+            await page.unroute('https://sagi-voice-edge-relay.sg3544225.workers.dev/**');
+            await page.route('https://sagi-voice-edge-relay.sg3544225.workers.dev/**',async r=>{
+              if(r.request().method()==='OPTIONS')return reply(r,204);
+              await new Promise(resolve=>setTimeout(resolve,1000));
+              await reply(r,200,{contentType:'audio/wav',body:wav}).catch(()=>{});
+            });
+            const pending=page.waitForRequest(r=>r.method()==='POST'&&r.url().endsWith('/api/direct-tts'));
+            await page.locator('#generate').click();
+            await pending;
+            await page.locator('#cancel').click();
+            await page.waitForFunction(()=>!document.querySelector('#generate').disabled);
+            assert.match(await page.locator('#status').textContent(),/已取消|abort/i);
+            assert.equal(await page.locator('#save').isEnabled(),false);
             console.log('Browser mock fallback, decode, draft persistence and long input passed');
           }finally{await browser.close()}
           JS

@@ -61,3 +61,17 @@ export function estimateDuration(plan, speed = 1) {
 export function boundedSpeed(ratio) {
   return Math.max(.82, Math.min(1.2, ratio));
 }
+
+export function groupDirectorPlan(plan) {
+  const grouped=[];
+  for(const item of plan){
+    const last=grouped.at(-1);
+    // Keep event beats and the first recovery separate.
+    if(last && last.type===item.type && !item.emphasis && last.emotion===item.emotion
+        && item.emotion!=='recovery' && last.text.length+item.text.length<=120){
+      last.text+=item.text;
+      last.pauseAfter=item.pauseAfter;
+    }else grouped.push({...item});
+  }
+  return grouped;
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {planFootball,estimateDuration,boundedSpeed} from '../free-mobile/football-director.mjs';
+import {planFootball,estimateDuration,boundedSpeed,groupDirectorPlan} from '../free-mobile/football-director.mjs';
 
 const golden = [
  ['双方比分一比一。','BACKGROUND'], ['开场仅仅两分钟。','SETUP'],
@@ -39,4 +39,15 @@ test('build, confirmed goal, release and 600-character coverage',()=>{
  assert.equal(planFootball(long).map(p=>p.text).join(''),long);
  assert.ok(estimateDuration(plan,1.1)<estimateDuration(plan,1));
  assert.equal(boundedSpeed(3),1.2);
+});
+
+test('coalescing keeps original text and isolates key events and recovery',()=>{
+ const text='双方一比一。场上比分不变。球进了！双方重新开球。继续比赛。';
+ const plan=planFootball(text);
+ const grouped=groupDirectorPlan(plan);
+ assert.equal(grouped.map(item=>item.text).join(''),text);
+ assert.equal(grouped.length,4);
+ assert.equal(grouped[1].type,'GOAL');
+ assert.equal(grouped[2].emotion,'recovery');
+ assert.equal(plan.length,5);
 });
