@@ -150,6 +150,9 @@ jobs:
             console.log('Browser mock fallback, decode, draft persistence and long input passed');
           }finally{await browser.close()}
           JS
+          if [ "$TEST_ENGINE" = chromium ]; then
+            node tests/director-live-smoke.mjs
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: SAGI-VOICE-FREE-MOBILE-TEST-${{ matrix.engine }}

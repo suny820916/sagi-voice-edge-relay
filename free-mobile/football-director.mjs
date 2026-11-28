@@ -16,10 +16,10 @@ const roles = {
 };
 
 function classify(text, previous, final) {
-  if (/差一点|差点|险些|错失|没能|未能|没有进球|不进|打偏|被取消|进球无效|出局|扳平未果/.test(text)) return 'SETBACK';
-  if (/[？?]\s*$|核查|待确认|进球数|进球纪录|本赛季.*粒|上赛季.*粒/.test(text)) return 'BACKGROUND';
-  if (/完成绝杀|绝杀了|反超(?:了|比分)|成功晋级|锁定晋级|关键扑救|扑出了制胜点球/.test(text)) return 'DECISIVE';
-  if (/球进了|打进(?:了|一球)|破门(?:了|！|!)|进球了/.test(text)) return 'GOAL';
+  if (/差一点|差点|险些|错失|没能|未能|没有进球|不进|打偏|被取消|进球(?:被判)?无效|越位在先|丢球|出局|扳平未果/.test(text)) return 'SETBACK';
+  if (/[？?]\s*$|核查|复核|待确认|尚未确认|进球数|进球纪录|本赛季.*粒|上赛季.*粒|(?:赛前|此前|上一场|上一次|回顾|回放).*?(?:打进|破门|进球|绝杀)/.test(text)) return 'BACKGROUND';
+  if (/完成绝杀|绝杀了|反超(?:了|比分|！|!)|成功晋级|锁定晋级|关键扑救|扑出了制胜点球/.test(text)) return 'DECISIVE';
+  if (/球进了|打进(?:了|一球)|破门(?:了|！|!|。)|进球了/.test(text)) return 'GOAL';
   if (/这是属于|这一刻|创造了历史|值得铭记/.test(text)) return 'EMOTIONAL';
   if (/终场|故事还在继续|这就是足球|比赛结束/.test(text)) return 'CLOSING';
   if (/孩子|少年|陪伴|热爱|家乡/.test(text)) return 'WARM';
@@ -37,7 +37,7 @@ function classify(text, previous, final) {
 export function planFootball(text) {
   // Keep every character, including whitespace and punctuation.
   const sentences = text.match(/[^。！？!?；;\n]*[。！？!?；;\n]+|[^。！？!?；;\n]+$/gu) || [];
-  const phrases = sentences.flatMap(sentence => sentence.split(/(?<=[，,])(?=\s*(?:球进了|绝杀了|完成绝杀|成功晋级|这是属于|左脚低射|右脚低射|第.{1,5}分钟))/u));
+  const phrases = sentences.flatMap(sentence => /(?:差点|差一点|险些|能否|如果)[，,]\s*(?:球进了|绝杀了|完成绝杀|成功晋级)/.test(sentence) ? [sentence] : sentence.split(/(?<=[，,])(?=\s*(?:球进了|绝杀了|完成绝杀|成功晋级|这是属于|左脚低射|右脚低射|第.{1,5}分钟))/u));
   let previous;
   return phrases.map((phrase, index) => {
     const type = classify(phrase, previous, index === phrases.length - 1);

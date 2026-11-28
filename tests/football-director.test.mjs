@@ -51,3 +51,13 @@ test('coalescing keeps original text and isolates key events and recovery',()=>{
  assert.equal(grouped[2].emotion,'recovery');
  assert.equal(plan.length,5);
 });
+
+test('scorekeeping, replay and negation do not trigger a live celebration',()=>{
+ for(const line of ['他们差点，球进了。','进球被判无效。','上一次他们在补时完成绝杀。','回放刚才打进的一球。']){
+  const plan=planFootball(line);
+  assert.equal(plan.map(item=>item.text).join(''),line);
+  assert.ok(plan.every(item=>!item.emphasis),line);
+ }
+ assert.equal(planFootball('他们反超！')[0].type,'DECISIVE');
+ assert.equal(planFootball('前锋破门。')[0].type,'GOAL');
+});
