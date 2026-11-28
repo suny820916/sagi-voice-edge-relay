@@ -91,18 +91,22 @@ function assembleDirectorAudio(parts,sampleRate) {
     engine:parts[0].engine,parts,sampleRate};
 }
 
-export async function regenerateDirectorPart(previous,index,synthesize,signal){
+export async function regenerateDirectorPart(previous,index,synthesize,signal,delivery){
   const part=previous.parts[index];
   if(!part)throw new Error('找不到要重生成的片段');
   signal?.throwIfAborted();
   const AC=globalThis.AudioContext||globalThis.webkitAudioContext;
   const ctx=new AC({sampleRate:previous.sampleRate});
   try{
-    const result=await synthesize(part.settings);
+    const settings={...part.settings};
+    if(delivery==='slower')settings.speed=boundedSpeed(settings.speed*.94);
+    if(delivery==='softer')settings.intensity=Math.max(0,settings.intensity-10);
+    if(delivery==='pause')settings.pauseAfter=Math.min(650,settings.pauseAfter+180);
+    const result=await synthesize(settings);
     const pcm=await ctx.decodeAudioData(await result.audio.arrayBuffer());
     signal?.throwIfAborted();
     const parts=previous.parts.slice();
-    parts[index]={...part,pcm,engine:result.engine};
+    parts[index]={item:{...part.item,pauseAfter:settings.pauseAfter},settings,pcm,engine:result.engine};
     return assembleDirectorAudio(parts,previous.sampleRate);
   }finally{
     await ctx.close().catch(()=>{});
