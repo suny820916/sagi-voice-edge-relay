@@ -72,6 +72,7 @@ $('generate').onclick=async()=>{
  }else if(plan.length>8)comparison=' · 长稿使用完整生成';
  const compare=Boolean(profile)&&!useDirector;
  if(!result)result=await generateFree(request,providers,options);
+ if(result.calibration==='retry-failed')comparison+=' · 校准未完成，已保留首次成品';
  if(result.parts){
   const event={mode,engine:result.engine,style,duration:result.durationSeconds,learned:Boolean(profile),
    segments:result.parts.map(part=>part.settings).map(({type,speed,intensity,pauseBefore,pauseAfter,style})=>({type,speed,intensity,pauseBefore,pauseAfter,style}))};

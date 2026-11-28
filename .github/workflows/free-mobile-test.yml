@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: 22
       - run: |
-          node --test tests/football-director.test.mjs
+          node --test tests/football-director.test.mjs tests/director-audio.test.mjs
           cp free-engine-router.mjs free-provider-adapters.mjs free-mobile/
           npm install --no-save playwright
           npx playwright install --with-deps "$TEST_ENGINE"

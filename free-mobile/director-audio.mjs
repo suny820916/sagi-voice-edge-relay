@@ -3,6 +3,8 @@ import {boundedSpeed,estimateDuration} from './football-director.mjs';
 export async function renderDirector(plan, synthesize, {signal,target=0,profile,onProgress,calibrate=true}={}) {
   const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
   const ctx = new AC();
+  const profileSpeed = profile?.speed || 1;
+  const speedFor = (item, rate) => boundedSpeed(item.speed * rate * profileSpeed);
   async function render(rate) {
     const parts = [];
     for (const [index, item] of plan.entries()) {
@@ -10,7 +12,7 @@ export async function renderDirector(plan, synthesize, {signal,target=0,profile,
       onProgress?.(index + 1, plan.length);
       const settings = {
         ...item,
-        speed: boundedSpeed(item.speed * rate * (profile?.speed || 1)),
+        speed: speedFor(item,rate),
         intensity: Math.min(100, Math.max(0, item.intensity + (profile ? profile.intensity - 68 : 0))),
       };
       const result = await synthesize(settings);
@@ -27,13 +29,32 @@ export async function renderDirector(plan, synthesize, {signal,target=0,profile,
     const rate = target ? boundedSpeed(estimateDuration(plan)/target) : 1;
     let parts = await render(rate);
     const measured = length(parts) / ctx.sampleRate;
-    const corrected = target ? boundedSpeed(rate * measured / target) : rate;
-    if (calibrate && target && Math.abs(measured-target)>1 && Math.abs(corrected-rate)>.03) {
-      try {
-        const alternative = await render(corrected);
-        if (Math.abs(length(alternative)/ctx.sampleRate-target)<Math.abs(measured-target)) parts=alternative;
-      } catch (error) {
-        if (signal?.aborted) throw error;
+    let calibration = 'not-needed';
+    if (target && Math.abs(measured-target)>1) calibration = 'out-of-range';
+    if (calibrate && calibration==='out-of-range') {
+      const speech = parts.reduce((sum,{pcm})=>sum+pcm.length/ctx.sampleRate,0);
+      const pauses = measured-speech;
+      const predict = candidate => pauses + parts.reduce((seconds,{item,settings,pcm}) =>
+        seconds+(pcm.length/ctx.sampleRate)*settings.speed/speedFor(item,candidate),0);
+      let low=.82, high=1.2;
+      for(let step=0;step<20;step++){
+        const mid=(low+high)/2;
+        if(predict(mid)>target)low=mid;
+        else high=mid;
+      }
+      const corrected=(low+high)/2;
+      const gain=Math.abs(measured-target)-Math.abs(predict(corrected)-target);
+      if(gain>.25) {
+        try {
+          const alternative = await render(corrected);
+          if (Math.abs(length(alternative)/ctx.sampleRate-target)<Math.abs(measured-target)) {
+            parts=alternative;
+            calibration='improved';
+          } else calibration='first-take';
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          calibration='retry-failed';
+        }
       }
     }
     const frames = length(parts);
@@ -59,7 +80,7 @@ export async function renderDirector(plan, synthesize, {signal,target=0,profile,
       offset+=Math.round(item.pauseAfter*ctx.sampleRate/1000)*2;
     }
     return {audio:new Blob([buffer],{type:'audio/wav'}),durationSeconds:frames/ctx.sampleRate,
-      engine:parts[0].engine,parts};
+      engine:parts[0].engine,parts,calibration};
   } finally {
     await ctx.close().catch(()=>{});
   }
