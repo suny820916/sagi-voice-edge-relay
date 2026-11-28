@@ -57,31 +57,54 @@ export async function renderDirector(plan, synthesize, {signal,target=0,profile,
         }
       }
     }
-    const frames = length(parts);
-    const buffer = new ArrayBuffer(44 + frames * 2);
-    const wav = new DataView(buffer);
-    const tag = (offset,value) => [...value].forEach((char,i)=>wav.setUint8(offset+i,char.charCodeAt(0)));
-    tag(0,'RIFF'); wav.setUint32(4,buffer.byteLength-8,true);
-    tag(8,'WAVE'); tag(12,'fmt '); wav.setUint32(16,16,true);
-    wav.setUint16(20,1,true); wav.setUint16(22,1,true);
-    wav.setUint32(24,ctx.sampleRate,true); wav.setUint32(28,ctx.sampleRate*2,true);
-    wav.setUint16(32,2,true); wav.setUint16(34,16,true);
-    tag(36,'data'); wav.setUint32(40,frames*2,true);
-    let offset=44;
-    for (const {item,pcm} of parts) {
-      offset+=Math.round(item.pauseBefore*ctx.sampleRate/1000)*2;
-      const channels=Array.from({length:pcm.numberOfChannels},(_,i)=>pcm.getChannelData(i));
-      const gain=item.emphasis?1.12:1;
-      for(let i=0;i<pcm.length;i++){
-        const sample=Math.max(-1,Math.min(1,channels.reduce((sum,channel)=>sum+channel[i],0)*gain/channels.length));
-        wav.setInt16(offset,Math.round(sample*(sample<0?32768:32767)),true);
-        offset+=2;
-      }
-      offset+=Math.round(item.pauseAfter*ctx.sampleRate/1000)*2;
-    }
-    return {audio:new Blob([buffer],{type:'audio/wav'}),durationSeconds:frames/ctx.sampleRate,
-      engine:parts[0].engine,parts,calibration};
+    return {...assembleDirectorAudio(parts,ctx.sampleRate),calibration};
   } finally {
+    await ctx.close().catch(()=>{});
+  }
+}
+
+function assembleDirectorAudio(parts,sampleRate) {
+  const frames = parts.reduce((total,{item,pcm})=>total+pcm.length+
+    Math.round(item.pauseBefore*sampleRate/1000)+Math.round(item.pauseAfter*sampleRate/1000),0);
+  const buffer = new ArrayBuffer(44 + frames * 2);
+  const wav = new DataView(buffer);
+  const tag = (offset,value) => [...value].forEach((char,i)=>wav.setUint8(offset+i,char.charCodeAt(0)));
+  tag(0,'RIFF'); wav.setUint32(4,buffer.byteLength-8,true);
+  tag(8,'WAVE'); tag(12,'fmt '); wav.setUint32(16,16,true);
+  wav.setUint16(20,1,true); wav.setUint16(22,1,true);
+  wav.setUint32(24,sampleRate,true); wav.setUint32(28,sampleRate*2,true);
+  wav.setUint16(32,2,true); wav.setUint16(34,16,true);
+  tag(36,'data'); wav.setUint32(40,frames*2,true);
+  let offset=44;
+  for (const {item,pcm} of parts) {
+    offset+=Math.round(item.pauseBefore*sampleRate/1000)*2;
+    const channels=Array.from({length:pcm.numberOfChannels},(_,i)=>pcm.getChannelData(i));
+    const gain=item.emphasis?1.12:1;
+    for(let i=0;i<pcm.length;i++){
+      const sample=Math.max(-1,Math.min(1,channels.reduce((sum,channel)=>sum+channel[i],0)*gain/channels.length));
+      wav.setInt16(offset,Math.round(sample*(sample<0?32768:32767)),true);
+      offset+=2;
+    }
+    offset+=Math.round(item.pauseAfter*sampleRate/1000)*2;
+  }
+  return {audio:new Blob([buffer],{type:'audio/wav'}),durationSeconds:frames/sampleRate,
+    engine:parts[0].engine,parts,sampleRate};
+}
+
+export async function regenerateDirectorPart(previous,index,synthesize,signal){
+  const part=previous.parts[index];
+  if(!part)throw new Error('找不到要重生成的片段');
+  signal?.throwIfAborted();
+  const AC=globalThis.AudioContext||globalThis.webkitAudioContext;
+  const ctx=new AC({sampleRate:previous.sampleRate});
+  try{
+    const result=await synthesize(part.settings);
+    const pcm=await ctx.decodeAudioData(await result.audio.arrayBuffer());
+    signal?.throwIfAborted();
+    const parts=previous.parts.slice();
+    parts[index]={...part,pcm,engine:result.engine};
+    return assembleDirectorAudio(parts,previous.sampleRate);
+  }finally{
     await ctx.close().catch(()=>{});
   }
 }
